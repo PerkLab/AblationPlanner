@@ -55,7 +55,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout = qt.QFormLayout(parametersCollapsibleButton)
 
      #INTRO 
-    intro = qt.QLabel("Place Fiducials as the Ablation points onto the segmented Tumour (red) \n ")
+    intro = qt.QLabel("Place markups as ablation points onto the segmented lesion \n ")
     parametersFormLayout.addWidget(intro)
     #
     # input volume selector
@@ -73,7 +73,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout.addRow("Input Volume: ", self.inputVolumeSelector)
 
     #
-    # output volume selector
+    # dose volume selector
     #
     self.doseVolumeSelector = slicer.qMRMLNodeComboBox()
     self.doseVolumeSelector.nodeTypes = ["vtkMRMLScalarVolumeNode"]
@@ -85,7 +85,21 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.doseVolumeSelector.showChildNodeTypes = False
     self.doseVolumeSelector.setMRMLScene( slicer.mrmlScene )
     self.doseVolumeSelector.setToolTip( "Pick the output to the algorithm." )
-    parametersFormLayout.addRow("Output Volume: ", self.doseVolumeSelector)
+    parametersFormLayout.addRow("Dose Volume: ", self.doseVolumeSelector)
+
+    # MarkUp list selector
+    #
+    self.markupSelector = slicer.qMRMLNodeComboBox()
+    self.markupSelector.nodeTypes = ["vtkMRMLMarkupsFiducialNode"]
+    self.markupSelector.selectNodeUponCreation = True
+    self.markupSelector.addEnabled = True
+    self.markupSelector.removeEnabled = True
+    self.markupSelector.noneEnabled = True
+    self.markupSelector.showHidden = False
+    self.markupSelector.showChildNodeTypes = False
+    self.markupSelector.setMRMLScene( slicer.mrmlScene )
+    self.markupSelector.setToolTip( "Pick the markup list" )
+    parametersFormLayout.addRow("Needle tip (markup) list: ", self.markupSelector)
 
     # connections
     self.inputVolumeSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
@@ -98,14 +112,14 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     #ADD BURNING TIME MANAGEMENT 
     burnTimeSelector = qt.QSpinBox()
     burnTimeSelector.setMinimum(1)
-    parametersFormLayout.addRow("Burning time at fiducials : ", burnTimeSelector)
+    parametersFormLayout.addRow("Burn time (s) at ablation needle tip : ", burnTimeSelector)
     self.burnTimeSelector = burnTimeSelector
 
     #CALC BUTTON
     calcButton = qt.QPushButton("Calculate Ablation")
     calcButton.toolTip = "Print 'Hello World' in standard output"
     parametersFormLayout.addWidget(calcButton)
-    calcButton.connect('clicked(bool)', self.onCalcButtonClicked)
+    calcButton.connect('clicked(bool)', self.onCalculateAblationClicked)
     self.layout.addStretch(1)
     self.calcButton = calcButton
 
@@ -167,15 +181,15 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
   def onSelect(self):
     pass
 
-  def onCalcButtonClicked(self):
+  def onCalculateAblationClicked(self):
     #logic = RfAblationLogic()
-    Image = self.inputVolumeSelector.currentNode()
-    doseVolume = self.doseVolumeSelector.currentNode()
-    if Image is None or doseVolume is None:
-      logging.error('onCalcButtonClicked: Invalid anatomic or dose image')
+    inputVolumeNode = self.inputVolumeSelector.currentNode()
+    doseVolumeNode = self.doseVolumeSelector.currentNode()
+    if inputVolumeNode is None or doseVolumeNode is None:
+      logging.error('onCalcButtonClicked: Invalid anatomic or dose inputImage')
       return
     burnTime = self.burnTimeSelector.value
-    result = self.logic.calculateAblationDose(Image, doseVolume, burnTime)
+    result = self.logic.calculateAblationDose(inputVolumeNode, self.doseVolumeSelector.currentNode(), burnTime, self.markupSelector.currentNode())
     #qt.QMessageBox.information(slicer.util.mainWindow(), 'Slicer Python', result2)
 
   def onDoseVolClicked(self):
@@ -186,12 +200,12 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     entryFiducial = self.entry.value
     endFiducial = self.end.value
     #TODO: Pass selected fiducial node below
-    resultMessage = self.logic.createNeedleModel(entryFiducial, endFiducial, self.inputVolumeSelector.currentNode())
+    resultMessage = self.logic.createNeedleModel(entryFiducial, endFiducial, self.inputVolumeSelector.currentNode(), self.markupSelector.currentNode())
     qt.QMessageBox.information(slicer.util.mainWindow(), 'Slicer Python', resultMessage)
     #logging.warning('ZZZ ' + str(resultMessage)
 
   def onResetFiducialsClicked(self):
-    result = self.logic.resetFiducials()
+    result = self.logic.resetFiducials(self.markupSelector.currentNode())
 
   def onResetNeedleClicked(self):
     result = self.logic.resetNeedlePlan(self.inputVolumeSelector.currentNode())
@@ -215,7 +229,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     #self.isodoseParameterNode = slicer.vtkMRMLIsodoseNode()
     #TODO: Create isodose param. node + DVH param. node
 
-  def createNeedleModel(self, entryFiducialIndex, endFiducialIndex, inputVolumeNode):
+  def createNeedleModel(self, entryFiducialIndex, endFiducialIndex, inputVolumeNode, needleTipFiducialNode):
 
     self.needleNodeReferenceRole = 'NeedleRef'
     if inputVolumeNode is None:
@@ -223,11 +237,10 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
       logging.error('createNeedleModel: ' + errorMessage)
       return errorMessage
 
-    f = slicer.util.getNode("F") #TODO: Get fidducial node as argument (add selector in UI)
     entryPointPosition = [0,0,0]
-    f.GetNthFiducialPosition(entryFiducialIndex-1, entryPointPosition)
+    needleTipFiducialNode.GetNthFiducialPosition(entryFiducialIndex-1, entryPointPosition)
     endPointPosition = [0,0,0]
-    f.GetNthFiducialPosition(endFiducialIndex-1, endPointPosition)
+    needleTipFiducialNode.GetNthFiducialPosition(endFiducialIndex-1, endPointPosition)
     
     lineSource = vtk.vtkLineSource()
     lineSource.SetPoint1(entryPointPosition[0],entryPointPosition[1],entryPointPosition[2])
@@ -275,7 +288,8 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
               break
 
 
-  def calculateAblationDose(self, Image, doseVolumeNode, burnTime):
+  def calculateAblationDose(self, inputVolumeNode, doseVolumeNode, burnTime, needleTipFiducialNode):
+    print "Starting calculation "
     dose = []
     radius = []
     for b in range(1,burnTime+1): 
@@ -287,18 +301,17 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     vol = slicer.util.array(doseVolumeNode.GetID())
     vol.fill(0)
 
-    f = slicer.util.getNode("F")
-    num = f.GetNumberOfFiducials()
+    num = needleTipFiducialNode.GetNumberOfFiducials()
 
     fiducials = np.zeros((num, 3)) 
     RastoIjkMatrix = vtk.vtkMatrix4x4()
-    Image.GetRASToIJKMatrix(RastoIjkMatrix)
+    inputVolumeNode.GetRASToIJKMatrix(RastoIjkMatrix)
     IjktoRasMatrix = vtk.vtkMatrix4x4()
-    Image.GetIJKToRASMatrix(IjktoRasMatrix)
+    inputVolumeNode.GetIJKToRASMatrix(IjktoRasMatrix)
 
     for i in range(num):
       pos = [0, 0, 0]
-      f.GetNthFiducialPosition(i, pos)
+      needleTipFiducialNode.GetNthFiducialPosition(i, pos)
       fiducialInRAS=pos
       pos = np.append(pos, 1)
 
@@ -310,6 +323,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
 
   def createIsodoseSurfaces(self, doseVolumeNode, burnTime):
+    print "calculate isodose surfaces "
     #isodoseColorTableNode
     #logging.info("Calculating Isodose volume")
 
@@ -371,9 +385,8 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     return True
 
 
-  def resetFiducials(self):
-    f = slicer.util.getNode("F")
-    f.RemoveAllMarkups()
+  def resetFiducials(self, needleTipFiducialNode ):
+    needleTipFiducialNode.RemoveAllMarkups()
     return True
 
 
