@@ -126,7 +126,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     #DoseVolumeHistogram BUTTON
     doseVolButton = qt.QPushButton("Get Dose Volume Histogram of the current plan")
     parametersFormLayout.addWidget(doseVolButton)
-    doseVolButton.connect('clicked(bool)', self.onDoseVolClicked)
+    doseVolButton.connect('clicked(bool)', self.onGetDVHClicked)
     self.layout.addStretch(2)
     self.doseVolButton = doseVolButton
 
@@ -149,13 +149,14 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.end = end
 
 
-    #NEEDLE PLAN BUTTON
-    needleButton = qt.QPushButton("Set a new Needle Plan")
+    #ADD NEW NEEDLE BUTTON 
+    needleButton = qt.QPushButton("Add new needle at these points")
     needleButton.toolTip = "Print 'Hello World' in standard output"
     parametersFormLayout.addWidget(needleButton)
-    needleButton.connect('clicked(bool)', self.onNeedlePlanButtonClicked)
+    needleButton.connect('clicked(bool)', self.onAddNeedleClicked)
     self.layout.addStretch(1)
     self.needleButton = needleButton
+    self.needleIndex = 0
 
     #RESET fIDUCIALS BUTTON
     parametersFormLayout.addRow(space)
@@ -165,10 +166,10 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.layout.addStretch(1)
     self.resetFiducialsButton = resetFiducialsButton
 
-    #RESET NEEDLE PLAN BUTTON
-    resetNeedleButton = qt.QPushButton("Reset Needle Plan")
+    #DELETE CURRENT NEEDLES BUTTON
+    resetNeedleButton = qt.QPushButton("Delete Current Needles")
     parametersFormLayout.addWidget(resetNeedleButton)
-    resetNeedleButton.connect('clicked(bool)', self.onResetNeedleClicked)
+    resetNeedleButton.connect('clicked(bool)', self.onDeleteNeedleClicked)
     self.layout.addStretch(2)
     self.resetNeedleButton = resetNeedleButton
 
@@ -182,33 +183,39 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     pass
 
   def onCalculateAblationClicked(self):
-    #logic = RfAblationLogic()
     inputVolumeNode = self.inputVolumeSelector.currentNode()
     doseVolumeNode = self.doseVolumeSelector.currentNode()
     if inputVolumeNode is None or doseVolumeNode is None:
-      logging.error('onCalcButtonClicked: Invalid anatomic or dose inputImage')
+      logging.error('onCalculateAblationClicked: Invalid anatomic or dose inputImage')
       return
-    burnTime = self.burnTimeSelector.value
-    result = self.logic.calculateAblationDose(inputVolumeNode, self.doseVolumeSelector.currentNode(), burnTime, self.markupSelector.currentNode())
-    #qt.QMessageBox.information(slicer.util.mainWindow(), 'Slicer Python', result2)
+    burnTime = self.burnTimeSelector.value #will always have a valid entry of min 1
+    result = self.logic.calculateAblationDose(self.inputVolumeSelector.currentNode(), self.doseVolumeSelector.currentNode(), burnTime, self.markupSelector.currentNode())
 
-  def onDoseVolClicked(self):
+  def onGetDVHClicked(self):
     doseVolumeNode = self.doseVolumeSelector.currentNode()
-    result = self.logic.getDoseVolHist(doseVolumeNode)
+    if doseVolumeNode is None:
+      logging.error('onGetDVHClicked: Invalid dose inputImage')
+      return
+    result = self.logic.getDVH(doseVolumeNode)
 
-  def onNeedlePlanButtonClicked(self):
-    entryFiducial = self.entry.value
+  def onAddNeedleClicked(self):
+    entryFiducial = self.entry.value 
     endFiducial = self.end.value
-    #TODO: Pass selected fiducial node below
-    resultMessage = self.logic.createNeedleModel(entryFiducial, endFiducial, self.inputVolumeSelector.currentNode(), self.markupSelector.currentNode())
-    qt.QMessageBox.information(slicer.util.mainWindow(), 'Slicer Python', resultMessage)
-    #logging.warning('ZZZ ' + str(resultMessage)
+    markupsNode = self.markupSelector.currentNode()
+    self.needleIndex = self.needleIndex + 1 
+    if markupsNode is None:
+      logging.error('onAddNeedleClicked: Invalid markupsNode selected')
+      return
+
+    resultMessage = self.logic.createNeedleModel(entryFiducial, endFiducial, self.inputVolumeSelector.currentNode(), self.markupSelector.currentNode(), self.needleIndex)
+    #qt.QMessageBox.information(slicer.util.mainWindow(), 'Slicer Python', resultMessage)
+    logging.info(str(resultMessage))
 
   def onResetFiducialsClicked(self):
     result = self.logic.resetFiducials(self.markupSelector.currentNode())
 
-  def onResetNeedleClicked(self):
-    result = self.logic.resetNeedlePlan(self.inputVolumeSelector.currentNode())
+  def onDeleteNeedleClicked(self):
+    result = self.logic.deleteNeedleModels(self.inputVolumeSelector.currentNode())
 
 #
 # RfAblationLogic
@@ -229,7 +236,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     #self.isodoseParameterNode = slicer.vtkMRMLIsodoseNode()
     #TODO: Create isodose param. node + DVH param. node
 
-  def createNeedleModel(self, entryFiducialIndex, endFiducialIndex, inputVolumeNode, needleTipFiducialNode):
+  def createNeedleModel(self, entryFiducialIndex, endFiducialIndex, inputVolumeNode, needleTipFiducialNode, needleIndex):
 
     self.needleNodeReferenceRole = 'NeedleRef'
     if inputVolumeNode is None:
@@ -253,7 +260,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     tubeFilter.Update()
 
     needleModelNode = slicer.vtkMRMLModelNode()
-    needleModelName = 'Needle_' + inputVolumeNode.GetName()
+    needleModelName = 'Needle_' + inputVolumeNode.GetName() + '_' + str(needleIndex)
     needleModelNode.SetName(needleModelName)
     slicer.mrmlScene.AddNode(needleModelNode)
     needleModelNode.SetPolyDataConnection(tubeFilter.GetOutputPort())
@@ -266,11 +273,12 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     modelDisplayNode.SetSliceIntersectionVisibility(True)
     slicer.mrmlScene.AddNode(modelDisplayNode)
     needleModelNode.SetAndObserveDisplayNodeID(modelDisplayNode.GetID())
-    return "Done"
+    return "Needle Successfully added"
 
-  def calculateRadialDoseForFiducial(self,fid, doseMap, doseVolumeArray, IjktoRasMatrix,fiducialInRAS):
+  def calculateRadialDoseForFiducial(self,fid, doseMap, doseVolumeArray, ijkToRasMatrix,fiducialInRAS):
 
-    rad = max(doseMap[0])
+    logging.info('Calculating Radial Dose for Fiducials')
+    rad = len(doseMap)-1 #radius of 0 is included in the doseMap 
     #search through cube of the radius and select spherical points
     for i in range(-rad, rad + 1):
       for j in range(-rad, rad + 1):
@@ -278,25 +286,25 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
           pos = np.array([i, j, k])
           pt_IJK = pos + np.array(fid)  # point in ijk
           appended_pt = np.append(pt_IJK,1)
-          pt_RAS = IjktoRasMatrix.MultiplyDoublePoint(appended_pt)
+          pt_RAS = ijkToRasMatrix.MultiplyDoublePoint(appended_pt)
           euclDist = np.linalg.norm(np.array(pt_RAS[0:3]) - np.array(fiducialInRAS))
-          for sphereradindex in range(len(doseMap[0])):
-            placed = False
-            if euclDist <= sphereradindex:
+          for sphereRadius in range(len(doseMap)):
+            if euclDist <= sphereRadius:
               #multiply dose by 5 to match automatic isodose levels 
-              doseVolumeArray[int(pt_IJK[2]), int(pt_IJK[1]), int(pt_IJK[0])] += (doseMap[1][int(sphereradindex)])*5
+              doseVolumeArray[int(pt_IJK[2]), int(pt_IJK[1]), int(pt_IJK[0])] += (doseMap[sphereRadius])*5
               break
 
 
   def calculateAblationDose(self, inputVolumeNode, doseVolumeNode, burnTime, needleTipFiducialNode):
-    print "Starting calculation "
-    dose = []
-    radius = []
-    for b in range(1,burnTime+1): 
-      dose.append(b)
-      radius.insert(0,b)
-
-    doseMap = [dose, radius]
+    
+    doseMap = {} #Key = radius Value = dosage
+    doseMap[0] = 5
+    dose = burnTime
+    for rad in range(1,burnTime+1): 
+      doseMap[rad] = dose
+      dose = dose-1
+      #burn time of 5 eg
+      #{ 0:5, 1:5, 2:4, 3:3, 4:2, 5:1}
     
     vol = slicer.util.array(doseVolumeNode.GetID())
     vol.fill(0)
@@ -304,10 +312,10 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     num = needleTipFiducialNode.GetNumberOfFiducials()
 
     fiducials = np.zeros((num, 3)) 
-    RastoIjkMatrix = vtk.vtkMatrix4x4()
-    inputVolumeNode.GetRASToIJKMatrix(RastoIjkMatrix)
-    IjktoRasMatrix = vtk.vtkMatrix4x4()
-    inputVolumeNode.GetIJKToRASMatrix(IjktoRasMatrix)
+    rasToIjkMatrix = vtk.vtkMatrix4x4()
+    inputVolumeNode.GetRASToIJKMatrix(rasToIjkMatrix)
+    ijkToRasMatrix = vtk.vtkMatrix4x4()
+    inputVolumeNode.GetIJKToRASMatrix(ijkToRasMatrix)
 
     for i in range(num):
       pos = [0, 0, 0]
@@ -315,17 +323,18 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
       fiducialInRAS=pos
       pos = np.append(pos, 1)
 
-      p_IJK = RastoIjkMatrix.MultiplyDoublePoint(pos)
-      self.calculateRadialDoseForFiducial(p_IJK[0:3], doseMap, vol, IjktoRasMatrix, fiducialInRAS)
+      p_IJK = rasToIjkMatrix.MultiplyDoublePoint(pos)
+      self.calculateRadialDoseForFiducial(p_IJK[0:3], doseMap, vol, ijkToRasMatrix, fiducialInRAS)
 
-    doseVolumeNode.Modified()
-    self.createIsodoseSurfaces(doseVolumeNode, burnTime)
+      doseVolumeNode.Modified()
+
+      self.createIsodoseSurfaces(doseVolumeNode, burnTime)
 
 
   def createIsodoseSurfaces(self, doseVolumeNode, burnTime):
-    print "calculate isodose surfaces "
+
+    logging.info('calculating Isodose volume')
     #isodoseColorTableNode
-    #logging.info("Calculating Isodose volume")
 
     #TODO: Have our own isodose parameter node
     #      - Create isodose parameter node in logic constructor. Add it to the scene!
@@ -333,11 +342,19 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     #      - Get isodose logic: logic = slicer.modules.isodose.logic()
     #      - Calculate isodose: logic.CreateIsodoseSurfaces(self.isodoseParameterNode)
 
-    #VISUALIZE ISODOSE
-    #Take the clone volume with the heat values and create a heat map
-    #Get a handle on the isodose module
-    
 
+    '''    isodoseParameterNode = slicer.vtkMRMLIsodoseNode()
+    slicer.mrmlScene.AddNode(isodoseParameterNode)
+    isodoseParameterNode.SetAndObserveDoseVolumeNode(doseVolumeNode)
+
+    isodoseColorTableNode = slicer.vtkMRMLColorTableNode()
+    #isodoseParameterNode.GetColorTableNode(isodoseColorTableNode)
+    isodoseParameterNode.SetandObserveColorTableNode(isodoseColorTableNode)
+
+
+    isodoseLogic = slicer.modules.isodose.logic()
+    isodoseLogic.CreateIsodoseSurfaces(self.isodoseParameterNode)'''
+    
     numOfModelNodesBeforeLoad = len( slicer.util.getNodes('vtkMRMLModelNode*') )
     isodoseWidget = slicer.modules.isodose.widgetRepresentation()
 
@@ -355,10 +372,9 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     applyButton = slicer.util.findChildren(widget=isodoseWidget, className='QPushButton', text='Generate isodose')[0]
     applyButton.click()
 
- 
-    
 
-  def getDoseVolHist(self, doseVolumeNode):
+
+  def getDVH(self, doseVolumeNode):
     #TODO: Have our own DVH parameter node ...
     #slicer.util.selectModule('DoseVolumeHistogram')
     dvhWidget = slicer.modules.dosevolumehistogram.widgetRepresentation()
@@ -390,7 +406,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     return True
 
 
-  def resetNeedlePlan(self, inputVolumeNode):
+  def deleteNeedleModels(self, inputVolumeNode):
     self.needleNodeReferenceRole = 'NeedleRef'
 
     if inputVolumeNode is None:
