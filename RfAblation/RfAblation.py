@@ -123,12 +123,27 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.layout.addStretch(1)
     self.calcButton = calcButton
 
+    #SEGMENTATION NODE SELECTOR 
+    self.segmentationSelector = slicer.qMRMLNodeComboBox()
+    self.segmentationSelector.nodeTypes = ['vtkMRMLSegmentationNode']
+    self.segmentationSelector.selectNodeUponCreation = True
+    self.segmentationSelector.addEnabled = True
+    self.segmentationSelector.removeEnabled = True
+    self.segmentationSelector.removeEnabled = True
+    self.segmentationSelector.noneEnabled = True
+    self.segmentationSelector.showHidden = False
+    self.segmentationSelector.showChildNodeTypes = False
+    self.segmentationSelector.setMRMLScene( slicer.mrmlScene )
+    self.segmentationSelector.setToolTip("Pick the correct segmentation node")
+    parametersFormLayout.addRow("Segmentation for DVH calculation : ", self.segmentationSelector)
+
+
     #DoseVolumeHistogram BUTTON
-    doseVolButton = qt.QPushButton("Get Dose Volume Histogram of the current plan")
-    parametersFormLayout.addWidget(doseVolButton)
-    doseVolButton.connect('clicked(bool)', self.onGetDVHClicked)
+    dvhButton = qt.QPushButton("Get Dose Volume Histogram of the current plan")
+    parametersFormLayout.addWidget(dvhButton)
+    dvhButton.connect('clicked(bool)', self.onGetDVHClicked)
     self.layout.addStretch(2)
-    self.doseVolButton = doseVolButton
+    self.dvhButton = dvhButton
 
     #SET UP NEEDLE PLAN 
     entryText = qt.QLabel("\n Once you are happy with the ablation of the tumor, \nset new fiducials as entry points.\n")
@@ -193,10 +208,11 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
 
   def onGetDVHClicked(self):
     doseVolumeNode = self.doseVolumeSelector.currentNode()
-    if doseVolumeNode is None:
-      logging.error('onGetDVHClicked: Invalid dose inputImage')
+    segmentationNode = self.segmentationSelector.currentNode()
+    if doseVolumeNode is None or segmentationNode is None : 
+      logging.error('onGetDVHClicked: Invalid dose inputImage or invalid segmentation')
       return
-    result = self.logic.getDVH(doseVolumeNode)
+    result = self.logic.getDVH(self.doseVolumeSelector.currentNode(), self.segmentationSelector.currentNode())
 
   def onAddNeedleClicked(self):
     entryFiducial = self.entry.value 
@@ -231,9 +247,9 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
   https://github.com/Slicer/Slicer/blob/master/Base/Python/slicer/ScriptedLoadableModule.py
   """
 
-  #def setParameters(self):
-   
-    #self.isodoseParameterNode = slicer.vtkMRMLIsodoseNode()
+  def __init__(self):
+    self.isodoseParameterNode = slicer.vtkMRMLIsodoseNode()
+    self.isodoseParameterNode.SetName("NewIsodose3")
     #TODO: Create isodose param. node + DVH param. node
 
   def createNeedleModel(self, entryFiducialIndex, endFiducialIndex, inputVolumeNode, needleTipFiducialNode, needleIndex):
@@ -275,19 +291,19 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     needleModelNode.SetAndObserveDisplayNodeID(modelDisplayNode.GetID())
     return "Needle Successfully added"
 
-  def calculateRadialDoseForFiducial(self,fid, doseMap, doseVolumeArray, ijkToRasMatrix,fiducialInRAS):
+  def calculateRadialDoseForFiducial(self, needleTip, doseMap, doseVolumeArray, ijkToRasMatrix, needleTipInRAS, needleTipIndex):
 
-    logging.info('Calculating Radial Dose for Fiducials')
+    logging.info('Calculating Radial Dose for Needle Tip ' + str(needleTipIndex))
     rad = len(doseMap)-1 #radius of 0 is included in the doseMap 
     #search through cube of the radius and select spherical points
     for i in range(-rad, rad + 1):
       for j in range(-rad, rad + 1):
         for k in range(-rad, rad + 1):
           pos = np.array([i, j, k])
-          pt_IJK = pos + np.array(fid)  # point in ijk
+          pt_IJK = pos + np.array(needleTip)  # point in ijk
           appended_pt = np.append(pt_IJK,1)
           pt_RAS = ijkToRasMatrix.MultiplyDoublePoint(appended_pt)
-          euclDist = np.linalg.norm(np.array(pt_RAS[0:3]) - np.array(fiducialInRAS))
+          euclDist = np.linalg.norm(np.array(pt_RAS[0:3]) - np.array(needleTipInRAS))
           for sphereRadius in range(len(doseMap)):
             if euclDist <= sphereRadius:
               #multiply dose by 5 to match automatic isodose levels 
@@ -311,7 +327,6 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
     num = needleTipFiducialNode.GetNumberOfFiducials()
 
-    fiducials = np.zeros((num, 3)) 
     rasToIjkMatrix = vtk.vtkMatrix4x4()
     inputVolumeNode.GetRASToIJKMatrix(rasToIjkMatrix)
     ijkToRasMatrix = vtk.vtkMatrix4x4()
@@ -320,41 +335,45 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     for i in range(num):
       pos = [0, 0, 0]
       needleTipFiducialNode.GetNthFiducialPosition(i, pos)
-      fiducialInRAS=pos
+      needleTipInRAS=pos
       pos = np.append(pos, 1)
 
       p_IJK = rasToIjkMatrix.MultiplyDoublePoint(pos)
-      self.calculateRadialDoseForFiducial(p_IJK[0:3], doseMap, vol, ijkToRasMatrix, fiducialInRAS)
+      self.calculateRadialDoseForFiducial(p_IJK[0:3], doseMap, vol, ijkToRasMatrix, needleTipInRAS, i)
 
       doseVolumeNode.Modified()
 
-      self.createIsodoseSurfaces(doseVolumeNode, burnTime)
-
+    self.createIsodoseSurfaces(doseVolumeNode, burnTime)
+    #logging.info("Done isodose calculations")
 
   def createIsodoseSurfaces(self, doseVolumeNode, burnTime):
 
     logging.info('calculating Isodose volume')
-    #isodoseColorTableNode
-
     #TODO: Have our own isodose parameter node
     #      - Create isodose parameter node in logic constructor. Add it to the scene!
     #      - In this function set the parameters in the parameter node (dose volume node, color table node, using SetAndObserveDoseVolumeNode etc.)
     #      - Get isodose logic: logic = slicer.modules.isodose.logic()
     #      - Calculate isodose: logic.CreateIsodoseSurfaces(self.isodoseParameterNode)
 
-
-    '''    isodoseParameterNode = slicer.vtkMRMLIsodoseNode()
-    slicer.mrmlScene.AddNode(isodoseParameterNode)
-    isodoseParameterNode.SetAndObserveDoseVolumeNode(doseVolumeNode)
-
-    isodoseColorTableNode = slicer.vtkMRMLColorTableNode()
-    #isodoseParameterNode.GetColorTableNode(isodoseColorTableNode)
-    isodoseParameterNode.SetandObserveColorTableNode(isodoseColorTableNode)
-
-
     isodoseLogic = slicer.modules.isodose.logic()
-    isodoseLogic.CreateIsodoseSurfaces(self.isodoseParameterNode)'''
     
+    self.isodoseParameterNode = slicer.vtkMRMLIsodoseNode()
+    slicer.mrmlScene.AddNode(self.isodoseParameterNode)
+
+    #DOSE VOLUME NODE 
+    self.isodoseParameterNode.ShowDoseVolumesOnlyOff()
+    self.isodoseParameterNode.DisableModifiedEventOn()
+    self.isodoseParameterNode.SetAndObserveDoseVolumeNode(doseVolumeNode)
+    self.isodoseParameterNode.DisableModifiedEventOff()
+    #self.isodoseParameterNode.SetAndObserveColorTableNode(isodoseColorTableNode)
+    
+    #COLOR TABLE NODE
+    isodoseColorTableNode = isodoseLogic.SetupColorTableNodeForDoseVolumeNode(doseVolumeNode)
+    #TODO: use the colorTable node to change the label values of the colors to ones that make sense
+    #In terms of heat / burn values 
+    isodoseLogic.CreateIsodoseSurfaces(self.isodoseParameterNode)
+    
+    '''
     numOfModelNodesBeforeLoad = len( slicer.util.getNodes('vtkMRMLModelNode*') )
     isodoseWidget = slicer.modules.isodose.widgetRepresentation()
 
@@ -371,12 +390,23 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     #Generate Isodose Volume and display
     applyButton = slicer.util.findChildren(widget=isodoseWidget, className='QPushButton', text='Generate isodose')[0]
     applyButton.click()
+    '''
 
 
-
-  def getDVH(self, doseVolumeNode):
+  def getDVH(self, doseVolumeNode, segmentationNode):
     #TODO: Have our own DVH parameter node ...
     #slicer.util.selectModule('DoseVolumeHistogram')
+
+    dvhParameterNode = slicer.vtkMRMLDoseVolumeHistogramNode()
+    slicer.mrmlScene.AddNode(dvhParameterNode)
+    dvhParameterNode.SetAndObserveDoseVolumeNode(doseVolumeNode)
+    dvhParameterNode.SetAndObserveSegmentationNode(segmentationNode)
+
+    dvhLogic = slicer.modules.dosevolumehistogram.logic()
+    dvhLogic.ComputeDvh(dvhParameterNode)
+
+
+    '''
     dvhWidget = slicer.modules.dosevolumehistogram.widgetRepresentation()
     segmentsCollapsibleGroupBox = slicer.util.findChildren(widget=dvhWidget, name='CollapsibleGroupBox_Segments')[0]
     segmentsTable = slicer.util.findChildren(widget=dvhWidget, name='SegmentsTableView')[0]
@@ -397,7 +427,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
     showHist = slicer.util.findChildren(widget=dvhWidget, className='QPushButton', name="pushButton_ShowAll")[0]
     showHist.click()
-
+    '''
     return True
 
 
