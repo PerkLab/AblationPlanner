@@ -249,7 +249,8 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
   def __init__(self):
     self.isodoseParameterNode = slicer.vtkMRMLIsodoseNode()
-    self.isodoseParameterNode.SetName("NewIsodose3")
+    #self.isodoseParameterNode.SetName("NewIsodose3")
+    self.dvhParameterNode = slicer.vtkMRMLDoseVolumeHistogramNode()
     #TODO: Create isodose param. node + DVH param. node
 
   def createNeedleModel(self, entryFiducialIndex, endFiducialIndex, inputVolumeNode, needleTipFiducialNode, needleIndex):
@@ -397,15 +398,23 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     #TODO: Have our own DVH parameter node ...
     #slicer.util.selectModule('DoseVolumeHistogram')
 
-    dvhParameterNode = slicer.vtkMRMLDoseVolumeHistogramNode()
-    slicer.mrmlScene.AddNode(dvhParameterNode)
-    dvhParameterNode.SetAndObserveDoseVolumeNode(doseVolumeNode)
-    dvhParameterNode.SetAndObserveSegmentationNode(segmentationNode)
+    slicer.mrmlScene.AddNode(self.dvhParameterNode)
+    self.dvhParameterNode.DisableModifiedEventOn()
+    self.dvhParameterNode.SetAndObserveDoseVolumeNode(doseVolumeNode)
+    self.dvhParameterNode.DisableModifiedEventOff()
+    self.dvhParameterNode.DisableModifiedEventOn()
+    self.dvhParameterNode.SetAndObserveSegmentationNode(segmentationNode)
+    self.dvhParameterNode.DisableModifiedEventOff()
 
     dvhLogic = slicer.modules.dosevolumehistogram.logic()
-    dvhLogic.ComputeDvh(dvhParameterNode)
+    dvhLogic.ComputeDvh(self.dvhParameterNode)
 
-
+    #TODO: Get Histogram Plot to automatically show up on 3D space in the screen
+    # NOT in the following way 
+    dvhWidget = slicer.modules.dosevolumehistogram.widgetRepresentation()
+    showHist = slicer.util.findChildren(widget=dvhWidget, className='QPushButton', name="pushButton_ShowAll")[0]
+    showHist.click()
+    
     '''
     dvhWidget = slicer.modules.dosevolumehistogram.widgetRepresentation()
     segmentsCollapsibleGroupBox = slicer.util.findChildren(widget=dvhWidget, name='CollapsibleGroupBox_Segments')[0]
