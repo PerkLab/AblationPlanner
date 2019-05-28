@@ -111,7 +111,8 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
 
     #ADD BURNING TIME MANAGEMENT 
     burnTimeSelector = qt.QSpinBox()
-    burnTimeSelector.setMinimum(1)
+    burnTimeSelector.setMinimum(0)
+    burnTimeSelector.setSingleStep(10)
     parametersFormLayout.addRow("Burn time (s) at ablation needle tip : ", burnTimeSelector)
     self.burnTimeSelector = burnTimeSelector
 
@@ -316,7 +317,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     
     doseMap = {} #Key = radius Value = dosage
     doseMap[0] = 5
-    dose = burnTime
+    dose = burnTime/10
     for rad in range(1,burnTime+1): 
       doseMap[rad] = dose
       dose = dose-1
@@ -344,10 +345,10 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
       doseVolumeNode.Modified()
 
-    self.createIsodoseSurfaces(doseVolumeNode, burnTime)
+    self.createIsodoseSurfaces(doseVolumeNode)
     #logging.info("Done isodose calculations")
 
-  def createIsodoseSurfaces(self, doseVolumeNode, burnTime):
+  def createIsodoseSurfaces(self, doseVolumeNode):
 
     logging.info('calculating Isodose volume')
     #TODO: Have our own isodose parameter node
@@ -363,6 +364,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
     #DOSE VOLUME NODE 
     self.isodoseParameterNode.ShowDoseVolumesOnlyOff()
+    self.isodoseParameterNode.ShowScalarBarOn()
     self.isodoseParameterNode.DisableModifiedEventOn()
     self.isodoseParameterNode.SetAndObserveDoseVolumeNode(doseVolumeNode)
     self.isodoseParameterNode.DisableModifiedEventOff()
@@ -370,8 +372,16 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     
     #COLOR TABLE NODE
     isodoseColorTableNode = isodoseLogic.SetupColorTableNodeForDoseVolumeNode(doseVolumeNode)
-    #TODO: use the colorTable node to change the label values of the colors to ones that make sense
-    #In terms of heat / burn values 
+    isodoseLogic.SetNumberOfIsodoseLevels(self.isodoseParameterNode, 8)
+    isodoseColorTableNode.SetColor(0, "5" , 0, 1, 0, 0.2)
+    isodoseColorTableNode.SetColor(1, "10" ,0.1, 0.9, 0.5, 0.2)
+    isodoseColorTableNode.SetColor(2, "15" ,1, 1, 0.4, 0.2)
+    isodoseColorTableNode.SetColor(3, "20" , 1, 0.9, 0.1, 0.2)
+    isodoseColorTableNode.SetColor(4, "25" ,1, 0.5, 0.1, 0.2)
+    isodoseColorTableNode.SetColor(5, "30" ,1, 0, 0, 0.2)
+    isodoseColorTableNode.SetColor(6, "35" ,0.6, 0, 0.6, 0.2)
+    isodoseColorTableNode.SetColor(7, "40" ,0.4, 0.1, 0, 0.2)
+
     isodoseLogic.CreateIsodoseSurfaces(self.isodoseParameterNode)
     
     '''
