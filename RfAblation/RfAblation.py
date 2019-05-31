@@ -4,6 +4,7 @@ import vtk, qt, ctk, slicer
 from slicer.ScriptedLoadableModule import *
 import logging
 import numpy as np
+import math
 
 #
 # RfAblation
@@ -112,6 +113,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     #ADD BURNING TIME MANAGEMENT 
     burnTimeSelector = qt.QSpinBox()
     burnTimeSelector.setMinimum(0)
+    burnTimeSelector.setMaximum(1800) # 30 mins 
     burnTimeSelector.setSingleStep(10)
     parametersFormLayout.addRow("Burn time (s) at ablation needle tip : ", burnTimeSelector)
     self.burnTimeSelector = burnTimeSelector
@@ -204,7 +206,9 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     if inputVolumeNode is None or doseVolumeNode is None:
       logging.error('onCalculateAblationClicked: Invalid anatomic or dose inputImage')
       return
-    burnTime = self.burnTimeSelector.value #will always have a valid entry of min 1
+    burnTime = int((self.burnTimeSelector.value)/10) #will always have a valid entry of min 0
+    if burnTime == 0 : 
+    	logging.error('onCalculateAblationClicked: Time set to burn is 0 - no calculation needed')
     result = self.logic.calculateAblationDose(self.inputVolumeSelector.currentNode(), self.doseVolumeSelector.currentNode(), burnTime, self.markupSelector.currentNode())
 
   def onGetDVHClicked(self):
@@ -254,45 +258,128 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     self.dvhParameterNode = slicer.vtkMRMLDoseVolumeHistogramNode()
     #TODO: Create isodose param. node + DVH param. node
 
-  def createNeedleModel(self, entryFiducialIndex, endFiducialIndex, inputVolumeNode, needleTipFiducialNode, needleIndex):
+  def makeDim(self, gridSize, gridSpacing):
+    #define the discretisation of the spatial dimension such that
+    # there is always a DC component
+    if (gridSize % 2) == 0:
+        #grid dimension has an even number of points
+        #nx = ((-Nx/2:Nx/2-1)/Nx).'
+        dim = np.arange(-gridSize/2,gridSize/2,1)
+        nx = np.true_divide(dim,gridSize)
+    else :
+        # grid dimension has an odd number of points
+        #nx = ((-(Nx-1)/2:(Nx-1)/2)/Nx).'
+        dim = np.arange(-(gridSize-1)/2,(gridSize-1)/(2+1),1)
+        nx = np.true_divide(dim,gridSize)
 
-    self.needleNodeReferenceRole = 'NeedleRef'
-    if inputVolumeNode is None:
-      errorMessage = 'Invalid input volume given'
-      logging.error('createNeedleModel: ' + errorMessage)
-      return errorMessage
+    # force middle value to be zero in case 1/Nx is a recurring
+    # number and the series doesn't give exactly zero
+    nx[int(math.floor(gridSize/2))] = 0
+            
+    # define the wavenumber vector components
+    kx_vec = np.multiply((2*math.pi/gridSpacing), nx);
 
-    entryPointPosition = [0,0,0]
-    needleTipFiducialNode.GetNthFiducialPosition(entryFiducialIndex-1, entryPointPosition)
-    endPointPosition = [0,0,0]
-    needleTipFiducialNode.GetNthFiducialPosition(endFiducialIndex-1, endPointPosition)
+    return kx_vec # CHECKED 
+
+  def calculateDoseMap(self, burnTime):
+    density = 1079 # [kg/m^3]
+    thermalConductivity = 0.52 # [W/(m.K) ]
+    specificHeat = 3540 # [J/(kg.K)]
+    ambientTemperature = 37 # [degC]
+
+    blood_density = 1060 
+    blood_specificHeat = 3617
+    blood_perfusionRate = 0.01 #[1/s]
+    blood_ambientTemperature = 37 #[degC]
+
+    #Set time at which to calculate temperature field 
+    t = burnTime
+
+    #calculate perfusion coefficient from the medium 
+    P = (blood_density * blood_perfusionRate * blood_specificHeat) / (density * specificHeat)
+
+    #calculate diffusivity from the medium 
+    D = thermalConductivity / (density * specificHeat)
+
+    gridSpacing = 0.01 #distance between points in the grid [m] 
+    gridSize = 120 
+    kx_vec = self.makeDim(gridSize, gridSpacing) #CHECKED : same output as matlab 
+
+    #kgrid.x - grid containing repeated copies of the grid coordinates in the x-direction 
+    grid = np.divide( np.multiply( np.multiply(gridSize,kx_vec),gridSpacing), (2 * math.pi * 100) ) #TODO : Find why the values are off by /100
     
-    lineSource = vtk.vtkLineSource()
-    lineSource.SetPoint1(entryPointPosition[0],entryPointPosition[1],entryPointPosition[2])
-    lineSource.SetPoint2(endPointPosition[0],endPointPosition[1],endPointPosition[2])
-    lineSource.Update()
-    tubeFilter = vtk.vtkTubeFilter()
-    tubeFilter.SetInputConnection(lineSource.GetOutputPort())
-    tubeFilter.SetRadius(0.5) #Default is 0.5
-    tubeFilter.SetNumberOfSides(100)
-    tubeFilter.Update()
+    #kgrid.k - Nx x Ny x Nz grid of the scalar wavenumber where k = sqrt(kx.^2 + ky.^2 + kz.^2) [rad/m]
+    kgrid = np.sqrt(np.power( kx_vec,2 ) )
 
-    needleModelNode = slicer.vtkMRMLModelNode()
-    needleModelName = 'Needle_' + inputVolumeNode.GetName() + '_' + str(needleIndex)
-    needleModelNode.SetName(needleModelName)
-    slicer.mrmlScene.AddNode(needleModelNode)
-    needleModelNode.SetPolyDataConnection(tubeFilter.GetOutputPort())
-    inputVolumeNode.AddNodeReferenceID(self.needleNodeReferenceRole, needleModelNode.GetID())
+    width = 4 * gridSpacing
+    #calculate volume rate of heat deposition 
+        #set Gaussian volume rate of heat deposition 
+    volumeRate = np.multiply(2000000, np.exp( -np.power((np.divide(grid,width)),2) ) ) 
 
-    modelDisplayNode = slicer.vtkMRMLModelDisplayNode()
-    modelDisplayNode.SetColor(1,1,0)
-    modelDisplayNode.SetOpacity(1)
-    modelDisplayNode.SetSliceIntersectionThickness(2)
-    modelDisplayNode.SetSliceIntersectionVisibility(True)
-    slicer.mrmlScene.AddNode(modelDisplayNode)
-    needleModelNode.SetAndObserveDisplayNodeID(modelDisplayNode.GetID())
-    return "Needle Successfully added"
+    S = np.divide(volumeRate ,np.multiply(density,specificHeat)) #CHECKED 
 
+    #Initialize matrix of initial temperatures that is the same size as S 
+    tempMat = np.full((gridSize,1),ambientTemperature)
+
+    # Define Green's funciton propagators 
+    #ifftshift gives different results in matlab than it does in Python 
+    ftShift = np.power( np.fft.ifftshift(kgrid) , 2 )
+
+    T0_propagator = np.exp( np.multiply( -( np.multiply(D,ftShift) + P),t) ) #CHECKED
+    Q_propagator = np.divide( (1 - T0_propagator), ( np.multiply(D,ftShift) + P ) ).reshape((120,1))   #CHECKED 
+    
+
+    # replace Q propagator with limits for k == 0 
+    #   if P == 0, the limit is t 
+    #   if P ~= 0, the limit is (1 - exp(-P*t))/P
+
+    '''
+    In MATLAB - THERE ARE CURRENTLY NO NAN ELEMENTS IN Q_propagator - will implement later
+    if ( numel(P) == 1) && (P == 0)
+        Q_propagator(isnan(Q_propagator)) = t
+    else
+        Q_propagator(isnan(Q_propagator)) = (1 - exp(-P * t)) ./ P
+    '''
+
+    T0_propagator = T0_propagator.reshape((120,1))  
+    #calculate exact Green's function solution 
+    if (len(S) == 1) and ( S == 0 ):
+        tempChange = np.real(np.fft.ifftn( np.multiply( T0_propagator, np.fft.fftn(tempMat - blood_ambientTemperature) ) ) )
+    else : 
+        func = np.multiply( T0_propagator, np.fft.fftn(tempMat - blood_ambientTemperature) ) + np.multiply( Q_propagator, np.fft.fftn(S).reshape((120,1)) )
+        tempChange = np.real( np.fft.ifftn( func ) )
+
+    T = tempChange + blood_ambientTemperature
+    
+    centerPoint = int(math.floor(len(T)/2))
+
+    #Set the doseMap based on the above calculations 
+    doseMap = {}
+    tValue = centerPoint
+    for i in range(centerPoint+1):
+        realTemp = int(round(T[tValue]))
+        if realTemp == 37 :
+            doseMap[i] = 37
+        elif realTemp > 37 and realTemp <= 40:
+            doseMap[i] = 40 
+        elif realTemp > 40 and realTemp <= 43:
+            doseMap[i] = 43
+        elif realTemp > 43 and realTemp <= 47:
+            doseMap[i] = 47
+        elif realTemp > 47 and realTemp <= 50:
+            doseMap[i] = 50
+        elif realTemp > 50 and realTemp <=53:
+            doseMap[i] = 53
+        elif realTemp > 53 and realTemp <= 55:
+            doseMap[i] = 55
+        else:
+            doseMap[i] = 60 
+        tValue = tValue - 1
+
+    return doseMap
+
+
+  
   def calculateRadialDoseForFiducial(self, needleTip, doseMap, doseVolumeArray, ijkToRasMatrix, needleTipInRAS, needleTipIndex):
 
     logging.info('Calculating Radial Dose for Needle Tip ' + str(needleTipIndex))
@@ -309,21 +396,26 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
           for sphereRadius in range(len(doseMap)):
             if euclDist <= sphereRadius:
               #multiply dose by 5 to match automatic isodose levels 
-              doseVolumeArray[int(pt_IJK[2]), int(pt_IJK[1]), int(pt_IJK[0])] += (doseMap[sphereRadius])*5
+              doseVolumeArray[int(pt_IJK[2]), int(pt_IJK[1]), int(pt_IJK[0])] += (doseMap[sphereRadius])
               break
 
 
   def calculateAblationDose(self, inputVolumeNode, doseVolumeNode, burnTime, needleTipFiducialNode):
     
+    '''
     doseMap = {} #Key = radius Value = dosage
     doseMap[0] = 5
-    dose = burnTime/10
+    dose = burnTime
     for rad in range(1,burnTime+1): 
       doseMap[rad] = dose
       dose = dose-1
       #burn time of 5 eg
       #{ 0:5, 1:5, 2:4, 3:3, 4:2, 5:1}
-    
+    '''
+
+    doseMap = self.calculateDoseMap(burnTime)
+    logging.info('calculated dose map')
+
     vol = slicer.util.array(doseVolumeNode.GetID())
     vol.fill(0)
 
@@ -373,14 +465,14 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     #COLOR TABLE NODE
     isodoseColorTableNode = isodoseLogic.SetupColorTableNodeForDoseVolumeNode(doseVolumeNode)
     isodoseLogic.SetNumberOfIsodoseLevels(self.isodoseParameterNode, 8)
-    isodoseColorTableNode.SetColor(0, "5" , 0, 1, 0, 0.2)
-    isodoseColorTableNode.SetColor(1, "10" ,0.1, 0.9, 0.5, 0.2)
-    isodoseColorTableNode.SetColor(2, "15" ,1, 1, 0.4, 0.2)
-    isodoseColorTableNode.SetColor(3, "20" , 1, 0.9, 0.1, 0.2)
-    isodoseColorTableNode.SetColor(4, "25" ,1, 0.5, 0.1, 0.2)
-    isodoseColorTableNode.SetColor(5, "30" ,1, 0, 0, 0.2)
-    isodoseColorTableNode.SetColor(6, "35" ,0.6, 0, 0.6, 0.2)
-    isodoseColorTableNode.SetColor(7, "40" ,0.4, 0.1, 0, 0.2)
+    isodoseColorTableNode.SetColor(0, "37" , 0, 1, 0, 0.2)
+    isodoseColorTableNode.SetColor(1, "40" ,0.1, 0.9, 0.5, 0.2)
+    isodoseColorTableNode.SetColor(2, "43" ,1, 1, 0.4, 0.2)
+    isodoseColorTableNode.SetColor(3, "47" , 1, 0.9, 0.1, 0.2)
+    isodoseColorTableNode.SetColor(4, "50" ,1, 0.5, 0.1, 0.2)
+    isodoseColorTableNode.SetColor(5, "53" ,1, 0, 0, 0.2)
+    isodoseColorTableNode.SetColor(6, "55" ,0.6, 0, 0.6, 0.2)
+    isodoseColorTableNode.SetColor(7, "60" ,0.4, 0.1, 0, 0.2)
 
     isodoseLogic.CreateIsodoseSurfaces(self.isodoseParameterNode)
     
@@ -448,6 +540,45 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     showHist.click()
     '''
     return True
+
+  def createNeedleModel(self, entryFiducialIndex, endFiducialIndex, inputVolumeNode, needleTipFiducialNode, needleIndex):
+
+    self.needleNodeReferenceRole = 'NeedleRef'
+    if inputVolumeNode is None:
+      errorMessage = 'Invalid input volume given'
+      logging.error('createNeedleModel: ' + errorMessage)
+      return errorMessage
+
+    entryPointPosition = [0,0,0]
+    needleTipFiducialNode.GetNthFiducialPosition(entryFiducialIndex-1, entryPointPosition)
+    endPointPosition = [0,0,0]
+    needleTipFiducialNode.GetNthFiducialPosition(endFiducialIndex-1, endPointPosition)
+    
+    lineSource = vtk.vtkLineSource()
+    lineSource.SetPoint1(entryPointPosition[0],entryPointPosition[1],entryPointPosition[2])
+    lineSource.SetPoint2(endPointPosition[0],endPointPosition[1],endPointPosition[2])
+    lineSource.Update()
+    tubeFilter = vtk.vtkTubeFilter()
+    tubeFilter.SetInputConnection(lineSource.GetOutputPort())
+    tubeFilter.SetRadius(0.5) #Default is 0.5
+    tubeFilter.SetNumberOfSides(100)
+    tubeFilter.Update()
+
+    needleModelNode = slicer.vtkMRMLModelNode()
+    needleModelName = 'Needle_' + inputVolumeNode.GetName() + '_' + str(needleIndex)
+    needleModelNode.SetName(needleModelName)
+    slicer.mrmlScene.AddNode(needleModelNode)
+    needleModelNode.SetPolyDataConnection(tubeFilter.GetOutputPort())
+    inputVolumeNode.AddNodeReferenceID(self.needleNodeReferenceRole, needleModelNode.GetID())
+
+    modelDisplayNode = slicer.vtkMRMLModelDisplayNode()
+    modelDisplayNode.SetColor(1,1,0)
+    modelDisplayNode.SetOpacity(1)
+    modelDisplayNode.SetSliceIntersectionThickness(2)
+    modelDisplayNode.SetSliceIntersectionVisibility(True)
+    slicer.mrmlScene.AddNode(modelDisplayNode)
+    needleModelNode.SetAndObserveDisplayNodeID(modelDisplayNode.GetID())
+    return "Needle Successfully added"
 
 
   def resetFiducials(self, needleTipFiducialNode ):
