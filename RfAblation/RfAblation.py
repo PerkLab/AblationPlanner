@@ -206,7 +206,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     if inputVolumeNode is None or doseVolumeNode is None:
       logging.error('onCalculateAblationClicked: Invalid anatomic or dose inputImage')
       return
-    burnTime = int((self.burnTimeSelector.value)/10) #will always have a valid entry of min 0
+    burnTime = (self.burnTimeSelector.value) #will always have a valid entry of min 0
     if burnTime == 0 : 
     	logging.error('onCalculateAblationClicked: Time set to burn is 0 - no calculation needed')
     result = self.logic.calculateAblationDose(self.inputVolumeSelector.currentNode(), self.doseVolumeSelector.currentNode(), burnTime, self.markupSelector.currentNode())
@@ -354,26 +354,32 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     centerPoint = int(math.floor(len(T)/2))
 
     #Set the doseMap based on the above calculations 
+    #only take into account temperature change [ raise ] due to compounding effects of
+    # multiple needles 
     doseMap = {}
     tValue = centerPoint
     for i in range(centerPoint+1):
         realTemp = int(round(T[tValue]))
-        if realTemp == 37 :
-            doseMap[i] = 37
-        elif realTemp > 37 and realTemp <= 40:
-            doseMap[i] = 40 
-        elif realTemp > 40 and realTemp <= 43:
-            doseMap[i] = 43
-        elif realTemp > 43 and realTemp <= 47:
-            doseMap[i] = 47
-        elif realTemp > 47 and realTemp <= 50:
-            doseMap[i] = 50
-        elif realTemp > 50 and realTemp <=53:
-            doseMap[i] = 53
-        elif realTemp > 53 and realTemp <= 55:
-            doseMap[i] = 55
-        else:
-            doseMap[i] = 60 
+        if realTemp == 37:
+            tValue = tValue - 1
+            continue
+        tempChange = realTemp - 37
+        if tempChange <= 2:
+            doseMap[i] = 1
+        elif tempChange <= 4:
+            doseMap[i] = 3
+        elif tempChange < 10:
+            doseMap[i] = 7
+        elif tempChange < 12:
+            doseMap[i] = 10
+        elif tempChange < 15:
+            doseMap[i] = 12
+        elif tempChange < 18:
+            doseMap[i] = 15
+        elif tempChange < 23:
+            doseMap[i] = 18
+        else :
+            doseMap[i] = 23
         tValue = tValue - 1
 
     return doseMap
@@ -465,14 +471,14 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     #COLOR TABLE NODE
     isodoseColorTableNode = isodoseLogic.SetupColorTableNodeForDoseVolumeNode(doseVolumeNode)
     isodoseLogic.SetNumberOfIsodoseLevels(self.isodoseParameterNode, 8)
-    isodoseColorTableNode.SetColor(0, "37" , 0, 1, 0, 0.2)
-    isodoseColorTableNode.SetColor(1, "40" ,0.1, 0.9, 0.5, 0.2)
-    isodoseColorTableNode.SetColor(2, "43" ,1, 1, 0.4, 0.2)
-    isodoseColorTableNode.SetColor(3, "47" , 1, 0.9, 0.1, 0.2)
-    isodoseColorTableNode.SetColor(4, "50" ,1, 0.5, 0.1, 0.2)
-    isodoseColorTableNode.SetColor(5, "53" ,1, 0, 0, 0.2)
-    isodoseColorTableNode.SetColor(6, "55" ,0.6, 0, 0.6, 0.2)
-    isodoseColorTableNode.SetColor(7, "60" ,0.4, 0.1, 0, 0.2)
+    isodoseColorTableNode.SetColor(0, "1" , 0, 1, 0, 0.2)
+    isodoseColorTableNode.SetColor(1, "3" ,0.1, 0.9, 0.5, 0.2)
+    isodoseColorTableNode.SetColor(2, "7" ,1, 1, 0.4, 0.2)
+    isodoseColorTableNode.SetColor(3, "10" , 1, 0.9, 0.1, 0.2)
+    isodoseColorTableNode.SetColor(4, "12" ,1, 0.5, 0.1, 0.2)
+    isodoseColorTableNode.SetColor(5, "15" ,1, 0, 0, 0.2)
+    isodoseColorTableNode.SetColor(6, "18" ,0.6, 0, 0.6, 0.2) #55C [+18] is significant thermal injury
+    isodoseColorTableNode.SetColor(7, "23" ,0.4, 0.1, 0, 0.2)
 
     isodoseLogic.CreateIsodoseSurfaces(self.isodoseParameterNode)
     
