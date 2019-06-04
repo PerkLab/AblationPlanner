@@ -282,6 +282,8 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     return kx_vec # CHECKED 
 
   def calculateDoseMap(self, burnTime):
+
+    #LIVER TISSUE PROPERTIES 
     density = 1079 # [kg/m^3]
     thermalConductivity = 0.52 # [W/(m.K) ]
     specificHeat = 3540 # [J/(kg.K)]
@@ -358,6 +360,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     # multiple needles 
     doseMap = {}
     tValue = centerPoint
+    print T[centerPoint]
     for i in range(centerPoint+1):
         realTemp = int(round(T[tValue]))
         if realTemp == 37:
@@ -380,6 +383,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
             doseMap[i] = 18
         else :
             doseMap[i] = 23
+            print "again"
         tValue = tValue - 1
 
     return doseMap
@@ -421,6 +425,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
     doseMap = self.calculateDoseMap(burnTime)
     logging.info('calculated dose map')
+    print doseMap
 
     vol = slicer.util.array(doseVolumeNode.GetID())
     vol.fill(0)
@@ -481,25 +486,6 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     isodoseColorTableNode.SetColor(7, "23" ,0.4, 0.1, 0, 0.2)
 
     isodoseLogic.CreateIsodoseSurfaces(self.isodoseParameterNode)
-    
-    '''
-    numOfModelNodesBeforeLoad = len( slicer.util.getNodes('vtkMRMLModelNode*') )
-    isodoseWidget = slicer.modules.isodose.widgetRepresentation()
-
-    checkOff = slicer.util.findChildren(widget=isodoseWidget, className='QCheckBox', name='checkBox_ShowDoseVolumesOnly')[0]
-    checkOff.checked = False
-
-    #select the doseVolume as the dose volume input
-    doseVolumeMrmlNodeCombobox = slicer.util.findChildren(widget=isodoseWidget, className='qMRMLNodeComboBox', name='MRMLNodeComboBox_DoseVolume')[0]
-    doseVolumeMrmlNodeCombobox.setCurrentNodeID(doseVolumeNode.GetID())
-
-    #set the number of iso levels
-    isoLevelsBox = slicer.util.findChildren(widget=isodoseWidget, className='QSpinBox', name='spinBox_NumberOfLevels')[0]
-    isoLevelsBox.setValue(burnTime)
-    #Generate Isodose Volume and display
-    applyButton = slicer.util.findChildren(widget=isodoseWidget, className='QPushButton', text='Generate isodose')[0]
-    applyButton.click()
-    '''
 
 
   def getDVH(self, doseVolumeNode, segmentationNode):
@@ -517,34 +503,17 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     dvhLogic = slicer.modules.dosevolumehistogram.logic()
     dvhLogic.ComputeDvh(self.dvhParameterNode)
 
-    #TODO: Get Histogram Plot to automatically show up on 3D space in the screen
-    # NOT in the following way 
-    dvhWidget = slicer.modules.dosevolumehistogram.widgetRepresentation()
-    showHist = slicer.util.findChildren(widget=dvhWidget, className='QPushButton', name="pushButton_ShowAll")[0]
-    showHist.click()
+    #Show Intensity volume Histogram 
+    metricsTableNode = self.dvhParameterNode.GetMetricsTableNode()
+    visibilityColumn = metricsTableNode.GetTable().GetColumn(self.dvhParameterNode.MetricColumnVisible)
+
+    numOfRows = metricsTableNode.GetNumberOfRows()
+    for row in range(numOfRows):
+        visibilityColumn.SetValue(row, True)
+
+    visibilityColumn.Modified()
+    metricsTableNode.Modified()
     
-    '''
-    dvhWidget = slicer.modules.dosevolumehistogram.widgetRepresentation()
-    segmentsCollapsibleGroupBox = slicer.util.findChildren(widget=dvhWidget, name='CollapsibleGroupBox_Segments')[0]
-    segmentsTable = slicer.util.findChildren(widget=dvhWidget, name='SegmentsTableView')[0]
-    mrmlNodeComboboxes = slicer.util.findChildren(widget=dvhWidget, className='qMRMLNodeComboBox')
-    for mrmlNodeCombobox in mrmlNodeComboboxes:
-      if 'vtkMRMLScalarVolumeNode' in mrmlNodeCombobox.nodeTypes:
-        doseVolumeNodeCombobox = mrmlNodeCombobox
-      elif 'vtkMRMLSegmentationNode' in mrmlNodeCombobox.nodeTypes:
-        segmentationNodeCombobox = mrmlNodeCombobox
-
-    showDoseVolumesOnly = slicer.util.findChildren(widget=dvhWidget, className='QCheckBox', name='checkBox_ShowDoseVolumesOnly')[0]
-    showDoseVolumesOnly.checked = False #allow us to use a volume and not a dose volume
-
-    doseVolumeNodeCombobox.setCurrentNodeID(doseVolumeNode.GetID()) #get dvh of the volume that contains the dose values
-    
-    computeDvhButton = slicer.util.findChildren(widget=dvhWidget, text='Compute DVH')[0]
-    computeDvhButton.click()
-
-    showHist = slicer.util.findChildren(widget=dvhWidget, className='QPushButton', name="pushButton_ShowAll")[0]
-    showHist.click()
-    '''
     return True
 
   def createNeedleModel(self, entryFiducialIndex, endFiducialIndex, inputVolumeNode, needleTipFiducialNode, needleIndex):
