@@ -154,13 +154,13 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
 
 
     #needleBox1 = qt.QHBoxLayout()
-    entryLabel= qt.QLabel("Entry Point = Fiducial ")
+    entryLabel= qt.QLabel("Entry Point set to MarkUp Number : ")
     entry = qt.QSpinBox()
     entry.setMinimum(1)
     parametersFormLayout.addRow(entryLabel, entry)
     self.entry = entry
 
-    endLabel = qt.QLabel("Needle Tip = Fiducial ")
+    endLabel = qt.QLabel("Needle Tip set to MarkUp Number : ")
     end = qt.QSpinBox()
     end.setMinimum(1)
     parametersFormLayout.addRow(endLabel, end)
@@ -220,10 +220,10 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     result = self.logic.getDVH(self.doseVolumeSelector.currentNode(), self.segmentationSelector.currentNode())
 
   def onAddNeedleClicked(self):
-    entryFiducial = self.entry.value 
-    endFiducial = self.end.value
+    entryFiducial = (self.entry.value - 1) # convert from markups given label in list to index in Markups Node
+    endFiducial = (self.end.value - 1)
     markupsNode = self.markupSelector.currentNode()
-    self.needleIndex = self.needleIndex + 1 
+    self.needleIndex = self.needleIndex + 1 # increase index at every new needle added 
     if markupsNode is None:
       logging.error('onAddNeedleClicked: Invalid markupsNode selected')
       return
@@ -237,6 +237,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
 
   def onDeleteNeedleClicked(self):
     result = self.logic.deleteNeedleModels(self.inputVolumeSelector.currentNode())
+    self.needleIndex = 0
 
 #
 # RfAblationLogic
@@ -383,7 +384,6 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
             doseMap[i] = 18
         else :
             doseMap[i] = 23
-            print "again"
         tValue = tValue - 1
 
     return doseMap
@@ -404,6 +404,8 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
           pt_RAS = ijkToRasMatrix.MultiplyDoublePoint(appended_pt)
           euclDist = np.linalg.norm(np.array(pt_RAS[0:3]) - np.array(needleTipInRAS))
           for sphereRadius in range(len(doseMap)):
+            if euclDist <= 3:
+                print pt_RAS
             if euclDist <= sphereRadius:
               #multiply dose by 5 to match automatic isodose levels 
               doseVolumeArray[int(pt_IJK[2]), int(pt_IJK[1]), int(pt_IJK[0])] += (doseMap[sphereRadius])
@@ -411,24 +413,13 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
 
   def calculateAblationDose(self, inputVolumeNode, doseVolumeNode, burnTime, needleTipFiducialNode):
-    
-    '''
-    doseMap = {} #Key = radius Value = dosage
-    doseMap[0] = 5
-    dose = burnTime
-    for rad in range(1,burnTime+1): 
-      doseMap[rad] = dose
-      dose = dose-1
-      #burn time of 5 eg
-      #{ 0:5, 1:5, 2:4, 3:3, 4:2, 5:1}
-    '''
 
     doseMap = self.calculateDoseMap(burnTime)
     logging.info('calculated dose map')
     print doseMap
 
-    vol = slicer.util.array(doseVolumeNode.GetID())
-    vol.fill(0)
+    doseVolumeArray = slicer.util.array(doseVolumeNode.GetID())
+    doseVolumeArray.fill(0)
 
     num = needleTipFiducialNode.GetNumberOfFiducials()
 
@@ -444,7 +435,8 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
       pos = np.append(pos, 1)
 
       p_IJK = rasToIjkMatrix.MultiplyDoublePoint(pos)
-      self.calculateRadialDoseForFiducial(p_IJK[0:3], doseMap, vol, ijkToRasMatrix, needleTipInRAS, i)
+      #print p_IJK
+      self.calculateRadialDoseForFiducial(p_IJK[0:3], doseMap, doseVolumeArray, ijkToRasMatrix, needleTipInRAS, i)
 
       doseVolumeNode.Modified()
 
@@ -489,8 +481,6 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
 
   def getDVH(self, doseVolumeNode, segmentationNode):
-    #TODO: Have our own DVH parameter node ...
-    #slicer.util.selectModule('DoseVolumeHistogram')
 
     slicer.mrmlScene.AddNode(self.dvhParameterNode)
     self.dvhParameterNode.DisableModifiedEventOn()
@@ -513,7 +503,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
     visibilityColumn.Modified()
     metricsTableNode.Modified()
-    
+
     return True
 
   def createNeedleModel(self, entryFiducialIndex, endFiducialIndex, inputVolumeNode, needleTipFiducialNode, needleIndex):
@@ -525,9 +515,9 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
       return errorMessage
 
     entryPointPosition = [0,0,0]
-    needleTipFiducialNode.GetNthFiducialPosition(entryFiducialIndex-1, entryPointPosition)
+    needleTipFiducialNode.GetNthFiducialPosition(entryFiducialIndex, entryPointPosition)
     endPointPosition = [0,0,0]
-    needleTipFiducialNode.GetNthFiducialPosition(endFiducialIndex-1, endPointPosition)
+    needleTipFiducialNode.GetNthFiducialPosition(endFiducialIndex, endPointPosition)
     
     lineSource = vtk.vtkLineSource()
     lineSource.SetPoint1(entryPointPosition[0],entryPointPosition[1],entryPointPosition[2])
