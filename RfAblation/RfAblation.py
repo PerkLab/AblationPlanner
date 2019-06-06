@@ -88,6 +88,13 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.doseVolumeSelector.setToolTip( "Pick the output to the algorithm." )
     parametersFormLayout.addRow("Dose Volume: ", self.doseVolumeSelector)
 
+    #Margin Button 
+    marginButton = qt.QPushButton("Apply a maring of 0.5cm")
+    parametersFormLayout.addWidget(marginButton)
+    marginButton.connect('clicked(bool)', self.onCalcMarginClicked)
+    self.marginButton = marginButton
+
+
     # MarkUp list selector
     #
     self.markupSelector = slicer.qMRMLNodeComboBox()
@@ -100,6 +107,8 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.markupSelector.showChildNodeTypes = False
     self.markupSelector.setMRMLScene( slicer.mrmlScene )
     self.markupSelector.setToolTip( "Pick the markup list" )
+    self.markupSelector.connect('currentNodeChanged(vtkMRMLNode*)', self.onMarkupsNodeSelectionChanged)
+
     parametersFormLayout.addRow("Needle tip (markup) list: ", self.markupSelector)
 
     # connections
@@ -153,18 +162,13 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout.addWidget(entryText)
 
 
-    #needleBox1 = qt.QHBoxLayout()
-    entryLabel= qt.QLabel("Entry Point set to MarkUp Number : ")
-    entry = qt.QSpinBox()
-    entry.setMinimum(1)
-    parametersFormLayout.addRow(entryLabel, entry)
-    self.entry = entry
+    #ENTRY POINT 
+    self.needleEntryCombobox = qt.QComboBox()
+    parametersFormLayout.addRow("Select needle entry point ", self.needleEntryCombobox)
 
-    endLabel = qt.QLabel("Needle Tip set to MarkUp Number : ")
-    end = qt.QSpinBox()
-    end.setMinimum(1)
-    parametersFormLayout.addRow(endLabel, end)
-    self.end = end
+    #NEEDLE TIP POINT 
+    self.needleTipCombobox = qt.QComboBox()
+    parametersFormLayout.addRow("Select needle tip point ", self.needleTipCombobox)
 
 
     #ADD NEW NEEDLE BUTTON 
@@ -200,6 +204,10 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
   def onSelect(self):
     pass
 
+  def onCalcMarginClicked(self):
+    #TODO: Added logging and selection of margin size and segmentation module
+    result = self.logic.applyTumourMargin(self.inputVolumeSelector.currentNode())
+
   def onCalculateAblationClicked(self):
     inputVolumeNode = self.inputVolumeSelector.currentNode()
     doseVolumeNode = self.doseVolumeSelector.currentNode()
@@ -211,6 +219,29 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     	logging.error('onCalculateAblationClicked: Time set to burn is 0 - no calculation needed')
     result = self.logic.calculateAblationDose(self.inputVolumeSelector.currentNode(), self.doseVolumeSelector.currentNode(), burnTime, self.markupSelector.currentNode())
 
+  def onMarkupsNodeSelectionChanged(self):
+    markupsNode = self.markupSelector.currentNode()
+    if markupsNode is None:
+        logging.error('onMarkupsNodeSelectionChanged: Invalid Markups Node')
+        return
+    self.populateNeedleEntryComboBox()
+
+  def populateNeedleEntryComboBox(self):
+    markupsNode = self.markupSelector.currentNode()
+    #self.needleEntryCombobox.clear
+    numberOfMarkers = markupsNode.GetNumberOfFiducials()
+    if numberOfMarkers > 0 :
+        self.needleEntryCombobox.enabled = True 
+    else :
+        logging.error('populateNeedleEntryComboBox: No fiducials to choose from ')
+        return 
+
+    for markupIndex in range(numberOfMarkers):
+        label = markupsNode.GetNthFiducialLabel(markupIndex)
+        self.needleEntryCombobox.addItem(label, markupIndex)
+        self.needleTipCombobox.addItem(label, markupIndex)
+
+
   def onGetDVHClicked(self):
     doseVolumeNode = self.doseVolumeSelector.currentNode()
     segmentationNode = self.segmentationSelector.currentNode()
@@ -220,16 +251,15 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     result = self.logic.getDVH(self.doseVolumeSelector.currentNode(), self.segmentationSelector.currentNode())
 
   def onAddNeedleClicked(self):
-    entryFiducial = (self.entry.value - 1) # convert from markups given label in list to index in Markups Node
-    endFiducial = (self.end.value - 1)
     markupsNode = self.markupSelector.currentNode()
+    entryPointIndex = self.needleEntryCombobox.currentIndex
+    tipPointIndex = self.needleTipCombobox.currentIndex
     self.needleIndex = self.needleIndex + 1 # increase index at every new needle added 
     if markupsNode is None:
       logging.error('onAddNeedleClicked: Invalid markupsNode selected')
       return
 
-    resultMessage = self.logic.createNeedleModel(entryFiducial, endFiducial, self.inputVolumeSelector.currentNode(), self.markupSelector.currentNode(), self.needleIndex)
-    #qt.QMessageBox.information(slicer.util.mainWindow(), 'Slicer Python', resultMessage)
+    resultMessage = self.logic.createNeedleModel(entryPointIndex, tipPointIndex, self.inputVolumeSelector.currentNode(), self.markupSelector.currentNode(), self.needleIndex)
     logging.info(str(resultMessage))
 
   def onResetFiducialsClicked(self):
@@ -255,9 +285,66 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
   def __init__(self):
     self.isodoseParameterNode = slicer.vtkMRMLIsodoseNode()
-    #self.isodoseParameterNode.SetName("NewIsodose3")
+    slicer.mrmlScene.AddNode(self.isodoseParameterNode)
+
     self.dvhParameterNode = slicer.vtkMRMLDoseVolumeHistogramNode()
-    #TODO: Create isodose param. node + DVH param. node
+    slicer.mrmlScene.AddNode(self.dvhParameterNode)
+
+    
+  def applyTumourMargin(self, inputVolumeNode) :
+    #TODO : accept segmentation module and time to set margin segment 
+    segmentationNode = slicer.util.getNode('Segmentation01')  #TODO: TO REMOVE 
+    segmentEditorNode = slicer.vtkMRMLSegmentEditorNode() #TODO: ADD TO PARAMETER NODE SET 
+    slicer.mrmlScene.AddNode(segmentEditorNode)
+    segmentEditorNode.SetAndObserveMasterVolumeNode(inputVolumeNode)
+    segmentEditorNode.SetAndObserveSegmentationNode(segmentationNode)
+
+    import vtkSegmentationCorePython as vtkSegmentationCore
+    marginSegmentID = 'marginID'
+    marginSegmentName = 'Margin'
+    marginColor = 80 
+    marginSegment = segmentationNode.GetSegmentation().AddEmptySegment(marginSegmentID, marginSegmentName, 100)
+
+    modifierID = segmentationNode.GetSegmentation().GetSegmentIdBySegmentName('tumour') #TODO: INPUT 
+    modifierSegment = segmentationNode.GetSegmentation().GetSegment(modifierID)
+    modifierSegmentLabelmap = modifierSegment.GetRepresentation(vtkSegmentationCore.vtkSegmentationConverter.GetSegmentationBinaryLabelmapRepresentationName())
+
+    slicer.vtkSlicerSegmentationsModuleLogic.SetBinaryLabelmapToSegment(modifierSegmentLabelmap,
+            segmentationNode, marginSegmentID, slicer.vtkSlicerSegmentationsModuleLogic.MODE_REPLACE, modifierSegmentLabelmap.GetExtent())
+
+    marginSizeMm = 5.00 #TODO: Get from user
+    labelMapSpacing = modifierSegmentLabelmap.GetSpacing()
+
+    kernelSizePixel = [int(round((marginSizeMm / labelMapSpacing[componentIndex]+1)/2)*2-1) for componentIndex in range(3)]
+
+    marginSegment = segmentationNode.GetSegmentation().GetSegment(marginSegmentID)
+    selectedSegmentLabelmap = marginSegment.GetRepresentation(vtkSegmentationCore.vtkSegmentationConverter.GetSegmentationBinaryLabelmapRepresentationName())
+
+    # We need to know exactly the value of the segment voxels, apply threshold to make force the selected label value
+    labelValue = 1
+    backgroundValue = 0
+    thresh = vtk.vtkImageThreshold()
+    thresh.SetInputData(selectedSegmentLabelmap)
+    thresh.ThresholdByLower(0)
+    thresh.SetInValue(backgroundValue)
+    thresh.SetOutValue(labelValue)
+    thresh.SetOutputScalarType(selectedSegmentLabelmap.GetScalarType())
+
+    erodeDilate = vtk.vtkImageDilateErode3D()
+    erodeDilate.SetInputConnection(thresh.GetOutputPort())
+    #grow 
+    erodeDilate.SetDilateValue(labelValue)
+    erodeDilate.SetErodeValue(backgroundValue)
+
+     # This can be a long operation - indicate it to the user
+    #qt.QApplication.setOverrideCursor(qt.Qt.WaitCursor)
+
+    erodeDilate.SetKernelSize(kernelSizePixel[0],kernelSizePixel[1],kernelSizePixel[2])
+    erodeDilate.Update()
+    selectedSegmentLabelmap.DeepCopy(erodeDilate.GetOutput())
+
+    selectedSegmentLabelmap.Modified()
+    #qt.QApplication.restoreOverrideCursor()
 
   def makeDim(self, gridSize, gridSpacing):
     #define the discretisation of the spatial dimension such that
@@ -353,7 +440,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
         tempChange = np.real( np.fft.ifftn( func ) )
 
     T = tempChange + blood_ambientTemperature
-    
+     
     centerPoint = int(math.floor(len(T)/2))
 
     #Set the doseMap based on the above calculations 
@@ -404,10 +491,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
           pt_RAS = ijkToRasMatrix.MultiplyDoublePoint(appended_pt)
           euclDist = np.linalg.norm(np.array(pt_RAS[0:3]) - np.array(needleTipInRAS))
           for sphereRadius in range(len(doseMap)):
-            if euclDist <= 3:
-                print pt_RAS
             if euclDist <= sphereRadius:
-              #multiply dose by 5 to match automatic isodose levels 
               doseVolumeArray[int(pt_IJK[2]), int(pt_IJK[1]), int(pt_IJK[0])] += (doseMap[sphereRadius])
               break
 
@@ -435,7 +519,6 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
       pos = np.append(pos, 1)
 
       p_IJK = rasToIjkMatrix.MultiplyDoublePoint(pos)
-      #print p_IJK
       self.calculateRadialDoseForFiducial(p_IJK[0:3], doseMap, doseVolumeArray, ijkToRasMatrix, needleTipInRAS, i)
 
       doseVolumeNode.Modified()
@@ -454,16 +537,12 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
     isodoseLogic = slicer.modules.isodose.logic()
     
-    self.isodoseParameterNode = slicer.vtkMRMLIsodoseNode()
-    slicer.mrmlScene.AddNode(self.isodoseParameterNode)
-
     #DOSE VOLUME NODE 
     self.isodoseParameterNode.ShowDoseVolumesOnlyOff()
     self.isodoseParameterNode.ShowScalarBarOn()
     self.isodoseParameterNode.DisableModifiedEventOn()
     self.isodoseParameterNode.SetAndObserveDoseVolumeNode(doseVolumeNode)
     self.isodoseParameterNode.DisableModifiedEventOff()
-    #self.isodoseParameterNode.SetAndObserveColorTableNode(isodoseColorTableNode)
     
     #COLOR TABLE NODE
     isodoseColorTableNode = isodoseLogic.SetupColorTableNodeForDoseVolumeNode(doseVolumeNode)
@@ -482,7 +561,6 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
   def getDVH(self, doseVolumeNode, segmentationNode):
 
-    slicer.mrmlScene.AddNode(self.dvhParameterNode)
     self.dvhParameterNode.DisableModifiedEventOn()
     self.dvhParameterNode.SetAndObserveDoseVolumeNode(doseVolumeNode)
     self.dvhParameterNode.DisableModifiedEventOff()
