@@ -53,14 +53,20 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.layout.addWidget(parametersCollapsibleButton)
 
     # Layout within the dummy collapsible button
-    parametersFormLayout = qt.QFormLayout(parametersCollapsibleButton)
+    ##parametersFormLayout = qt.QFormLayout(parametersCollapsibleButton)
+    #parametersGridLayout = qt.QHBoxLayout(parametersCollapsibleButton)
+    ##parametersFormLayout.setHorizontalSpacing(2)
+    ##parametersFormLayout.setVerticalSpacing(2)
+    gridLayout = qt.QGridLayout(parametersCollapsibleButton)
+    #gridLayout.setHorizontalSpacing(3)
+    #gridLayout.setVerticalSpacing(5)
 
      #INTRO 
     intro = qt.QLabel("Place markups as ablation points onto the segmented lesion \n ")
-    parametersFormLayout.addWidget(intro)
-    #
-    # input volume selector
-    #
+    gridLayout.addWidget(intro,0,0, 1, 2)
+    parameterFormLayout = qt.QFormLayout()
+  
+    #INPUT VOLUME SELECTOR
     self.inputVolumeSelector = slicer.qMRMLNodeComboBox()
     self.inputVolumeSelector.nodeTypes = ["vtkMRMLScalarVolumeNode"]
     self.inputVolumeSelector.selectNodeUponCreation = True
@@ -71,11 +77,9 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.inputVolumeSelector.showChildNodeTypes = False
     self.inputVolumeSelector.setMRMLScene( slicer.mrmlScene )
     self.inputVolumeSelector.setToolTip( "Pick the input to the algorithm." )
-    parametersFormLayout.addRow("Input Volume: ", self.inputVolumeSelector)
+    parameterFormLayout.addRow('    Input Volume : ', self.inputVolumeSelector)
 
-    #
-    # dose volume selector
-    #
+    #DOSE VOLUME SELECTOR 
     self.doseVolumeSelector = slicer.qMRMLNodeComboBox()
     self.doseVolumeSelector.nodeTypes = ["vtkMRMLScalarVolumeNode"]
     self.doseVolumeSelector.selectNodeUponCreation = True
@@ -86,14 +90,41 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.doseVolumeSelector.showChildNodeTypes = False
     self.doseVolumeSelector.setMRMLScene( slicer.mrmlScene )
     self.doseVolumeSelector.setToolTip( "Pick the output to the algorithm." )
-    parametersFormLayout.addRow("Dose Volume: ", self.doseVolumeSelector)
+    parameterFormLayout.addRow('    Dose Volume : ', self.doseVolumeSelector)
+
+    # connections
+    self.inputVolumeSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
+    self.doseVolumeSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
+
+    #SEGMENTATION NODE SELECTOR 
+    self.segmentationSelector = slicer.qMRMLNodeComboBox()
+    self.segmentationSelector.nodeTypes = ['vtkMRMLSegmentationNode']
+    self.segmentationSelector.selectNodeUponCreation = True
+    self.segmentationSelector.addEnabled = True
+    self.segmentationSelector.removeEnabled = True
+    self.segmentationSelector.removeEnabled = True
+    self.segmentationSelector.noneEnabled = True
+    self.segmentationSelector.showHidden = False
+    self.segmentationSelector.showChildNodeTypes = False
+    self.segmentationSelector.setMRMLScene( slicer.mrmlScene )
+    self.segmentationSelector.setToolTip("Pick the correct segmentation node")
+    parameterFormLayout.addRow('    Segmentation Node : ', self.segmentationSelector)
+
+    gridLayout.addLayout(parameterFormLayout,1,0,3,2)
 
     #Margin Button 
-    marginButton = qt.QPushButton("Apply a maring of 0.5cm")
-    parametersFormLayout.addWidget(marginButton)
+    marginLabel = qt.QLabel("   Set a margin of : ")
+    marginButton = qt.QPushButton("Apply")
     marginButton.connect('clicked(bool)', self.onCalcMarginClicked)
     self.marginButton = marginButton
+    marginSizeSelector = qt.QSpinBox()
+    marginSizeSelector.setMinimum(0)
+    marginSizeSelector.setSuffix(' mm')
+    self.marginSizeSelector = marginSizeSelector
 
+    gridLayout.addWidget(marginLabel, 1, 2)
+    gridLayout.addWidget(self.marginSizeSelector, 1,3)
+    gridLayout.addWidget(self.marginButton, 1, 4)
 
     # MarkUp list selector
     #
@@ -109,91 +140,79 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.markupSelector.setToolTip( "Pick the markup list" )
     self.markupSelector.connect('currentNodeChanged(vtkMRMLNode*)', self.onMarkupsNodeSelectionChanged)
 
-    parametersFormLayout.addRow("Needle tip (markup) list: ", self.markupSelector)
-
-    # connections
-    self.inputVolumeSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
-    self.doseVolumeSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
-
-    # Add vertical spacer
-    self.layout.addStretch(1)
-    space = qt.QLabel("\n")
+    # # Add vertical spacer
+    # self.layout.addStretch(1)
+    # space = qt.QLabel("\n")
 
     #ADD BURNING TIME MANAGEMENT 
     burnTimeSelector = qt.QSpinBox()
     burnTimeSelector.setMinimum(0)
     burnTimeSelector.setMaximum(1800) # 30 mins 
     burnTimeSelector.setSingleStep(10)
-    parametersFormLayout.addRow("Burn time (s) at ablation needle tip : ", burnTimeSelector)
+    burnTimeSelector.setSuffix('s')
     self.burnTimeSelector = burnTimeSelector
+
+    markupFormLayout = qt.QFormLayout()
+    markupFormLayout.addRow('   Pick the markup list: ', self.markupSelector)
+    markupFormLayout.addRow('   Set burn time :', self.burnTimeSelector)
+    gridLayout.addLayout(markupFormLayout, 2,2,2,3)
 
     #CALC BUTTON
     calcButton = qt.QPushButton("Calculate Ablation")
     calcButton.toolTip = "Print 'Hello World' in standard output"
-    parametersFormLayout.addWidget(calcButton)
     calcButton.connect('clicked(bool)', self.onCalculateAblationClicked)
     self.layout.addStretch(1)
     self.calcButton = calcButton
 
-    #SEGMENTATION NODE SELECTOR 
-    self.segmentationSelector = slicer.qMRMLNodeComboBox()
-    self.segmentationSelector.nodeTypes = ['vtkMRMLSegmentationNode']
-    self.segmentationSelector.selectNodeUponCreation = True
-    self.segmentationSelector.addEnabled = True
-    self.segmentationSelector.removeEnabled = True
-    self.segmentationSelector.removeEnabled = True
-    self.segmentationSelector.noneEnabled = True
-    self.segmentationSelector.showHidden = False
-    self.segmentationSelector.showChildNodeTypes = False
-    self.segmentationSelector.setMRMLScene( slicer.mrmlScene )
-    self.segmentationSelector.setToolTip("Pick the correct segmentation node")
-    parametersFormLayout.addRow("Segmentation for DVH calculation : ", self.segmentationSelector)
-
+    gridLayout.addWidget(calcButton, 4, 1, 1, 3)
 
     #DoseVolumeHistogram BUTTON
     dvhButton = qt.QPushButton("Get Dose Volume Histogram of the current plan")
-    parametersFormLayout.addWidget(dvhButton)
     dvhButton.connect('clicked(bool)', self.onGetDVHClicked)
     self.layout.addStretch(2)
     self.dvhButton = dvhButton
 
+    gridLayout.addWidget(dvhButton, 5,1,1,3)
+
     #SET UP NEEDLE PLAN 
-    entryText = qt.QLabel("\n Once you are happy with the ablation of the tumor, \nset new fiducials as entry points.\n")
-    parametersFormLayout.addWidget(entryText)
+    entryText = qt.QLabel("\n Once you are happy with the ablation of the tumor, set new fiducials as entry points.\n")
+    gridLayout.addWidget(entryText, 6,0,1,4)
 
 
     #ENTRY POINT 
     self.needleEntryCombobox = qt.QComboBox()
-    parametersFormLayout.addRow("Select needle entry point ", self.needleEntryCombobox)
-
+    self.needleEntryCombobox.connect('activated(int)',self.populateNeedleEntryComboBox)
     #NEEDLE TIP POINT 
     self.needleTipCombobox = qt.QComboBox()
-    parametersFormLayout.addRow("Select needle tip point ", self.needleTipCombobox)
-
 
     #ADD NEW NEEDLE BUTTON 
     needleButton = qt.QPushButton("Add new needle at these points")
     needleButton.toolTip = "Print 'Hello World' in standard output"
-    parametersFormLayout.addWidget(needleButton)
     needleButton.connect('clicked(bool)', self.onAddNeedleClicked)
     self.layout.addStretch(1)
     self.needleButton = needleButton
     self.needleIndex = 0
 
+    needleFormLayout = qt.QFormLayout()
+    needleFormLayout.addRow('   Needle Entry point : ', self.needleEntryCombobox)
+    needleFormLayout.addRow('   Needle Tip point : ', self.needleTipCombobox)
+    needleFormLayout.addWidget(needleButton)
+    gridLayout.addLayout(needleFormLayout, 7,0, 3, 2)
+
+
     #RESET fIDUCIALS BUTTON
-    parametersFormLayout.addRow(space)
     resetFiducialsButton = qt.QPushButton("Reset Fiducials")
-    parametersFormLayout.addWidget(resetFiducialsButton)
     resetFiducialsButton.connect('clicked(bool)', self.onResetFiducialsClicked)
     self.layout.addStretch(1)
     self.resetFiducialsButton = resetFiducialsButton
+    gridLayout.addWidget(self.resetFiducialsButton, 7 ,3, 1, 1)
 
     #DELETE CURRENT NEEDLES BUTTON
     resetNeedleButton = qt.QPushButton("Delete Current Needles")
-    parametersFormLayout.addWidget(resetNeedleButton)
     resetNeedleButton.connect('clicked(bool)', self.onDeleteNeedleClicked)
     self.layout.addStretch(2)
     self.resetNeedleButton = resetNeedleButton
+    gridLayout.addWidget(self.resetNeedleButton, 8,3,1,1)
 
     # Create logic
     self.logic = RfAblationLogic()
@@ -205,8 +224,13 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     pass
 
   def onCalcMarginClicked(self):
-    #TODO: Added logging and selection of margin size and segmentation module
-    result = self.logic.applyTumourMargin(self.inputVolumeSelector.currentNode())
+    inputVolumeNode = self.inputVolumeSelector.currentNode()
+    segmentationNode = self.segmentationSelector.currentNode()
+    if inputVolumeNode is None or segmentationNode is None : 
+        logging.error('onCalcMarginClicked: Invalid input volume or segmentation node')
+        return
+    marginSizeMm = self.marginSizeSelector.value #minimum set to 0 in selector 
+    result = self.logic.applyTumourMargin(self.inputVolumeSelector.currentNode(), self.segmentationSelector.currentNode(), marginSizeMm)
 
   def onCalculateAblationClicked(self):
     inputVolumeNode = self.inputVolumeSelector.currentNode()
@@ -224,22 +248,26 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     if markupsNode is None:
         logging.error('onMarkupsNodeSelectionChanged: Invalid Markups Node')
         return
+    self.oldnumberOfMarkers = 0
     self.populateNeedleEntryComboBox()
 
   def populateNeedleEntryComboBox(self):
     markupsNode = self.markupSelector.currentNode()
-    #self.needleEntryCombobox.clear
     numberOfMarkers = markupsNode.GetNumberOfFiducials()
-    if numberOfMarkers > 0 :
-        self.needleEntryCombobox.enabled = True 
-    else :
-        logging.error('populateNeedleEntryComboBox: No fiducials to choose from ')
-        return 
+    if (numberOfMarkers != self.oldnumberOfMarkers) == True :
+        self.oldnumberOfMarkers = numberOfMarkers
+        self.needleEntryCombobox.clear()
+        self.needleTipCombobox.clear()
+        if numberOfMarkers > 0 :
+            self.needleEntryCombobox.enabled = True 
+        else :
+            logging.error('populateNeedleEntryComboBox: No fiducials to choose from ')
+            return 
 
-    for markupIndex in range(numberOfMarkers):
-        label = markupsNode.GetNthFiducialLabel(markupIndex)
-        self.needleEntryCombobox.addItem(label, markupIndex)
-        self.needleTipCombobox.addItem(label, markupIndex)
+        for markupIndex in range(numberOfMarkers):
+            label = markupsNode.GetNthFiducialLabel(markupIndex)
+            self.needleEntryCombobox.addItem(label, markupIndex)
+            self.needleTipCombobox.addItem(label, markupIndex)
 
 
   def onGetDVHClicked(self):
@@ -284,6 +312,10 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
   """
 
   def __init__(self):
+
+    self.segmentEditorNode = slicer.vtkMRMLSegmentEditorNode()
+    slicer.mrmlScene.AddNode(self.segmentEditorNode)
+
     self.isodoseParameterNode = slicer.vtkMRMLIsodoseNode()
     slicer.mrmlScene.AddNode(self.isodoseParameterNode)
 
@@ -291,19 +323,16 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     slicer.mrmlScene.AddNode(self.dvhParameterNode)
 
     
-  def applyTumourMargin(self, inputVolumeNode) :
-    #TODO : accept segmentation module and time to set margin segment 
-    segmentationNode = slicer.util.getNode('Segmentation01')  #TODO: TO REMOVE 
-    segmentEditorNode = slicer.vtkMRMLSegmentEditorNode() #TODO: ADD TO PARAMETER NODE SET 
-    slicer.mrmlScene.AddNode(segmentEditorNode)
-    segmentEditorNode.SetAndObserveMasterVolumeNode(inputVolumeNode)
-    segmentEditorNode.SetAndObserveSegmentationNode(segmentationNode)
+  def applyTumourMargin(self, inputVolumeNode, segmentationNode) :
+
+    self.segmentEditorNode.SetAndObserveMasterVolumeNode(inputVolumeNode)
+    self.segmentEditorNode.SetAndObserveSegmentationNode(segmentationNode)
 
     import vtkSegmentationCorePython as vtkSegmentationCore
     marginSegmentID = 'marginID'
-    marginSegmentName = 'Margin'
+    marginSegmentName = segmentationNode.GetName() + '_margin'
     marginColor = 80 
-    marginSegment = segmentationNode.GetSegmentation().AddEmptySegment(marginSegmentID, marginSegmentName, 100)
+    marginSegment = segmentationNode.GetSegmentation().AddEmptySegment(marginSegmentID, marginSegmentName, [0.1,0.5,1])
 
     modifierID = segmentationNode.GetSegmentation().GetSegmentIdBySegmentName('tumour') #TODO: INPUT 
     modifierSegment = segmentationNode.GetSegmentation().GetSegment(modifierID)
@@ -312,11 +341,8 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     slicer.vtkSlicerSegmentationsModuleLogic.SetBinaryLabelmapToSegment(modifierSegmentLabelmap,
             segmentationNode, marginSegmentID, slicer.vtkSlicerSegmentationsModuleLogic.MODE_REPLACE, modifierSegmentLabelmap.GetExtent())
 
-    marginSizeMm = 5.00 #TODO: Get from user
     labelMapSpacing = modifierSegmentLabelmap.GetSpacing()
-
     kernelSizePixel = [int(round((marginSizeMm / labelMapSpacing[componentIndex]+1)/2)*2-1) for componentIndex in range(3)]
-
     marginSegment = segmentationNode.GetSegmentation().GetSegment(marginSegmentID)
     selectedSegmentLabelmap = marginSegment.GetRepresentation(vtkSegmentationCore.vtkSegmentationConverter.GetSegmentationBinaryLabelmapRepresentationName())
 
@@ -335,16 +361,12 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     #grow 
     erodeDilate.SetDilateValue(labelValue)
     erodeDilate.SetErodeValue(backgroundValue)
-
-     # This can be a long operation - indicate it to the user
-    #qt.QApplication.setOverrideCursor(qt.Qt.WaitCursor)
-
     erodeDilate.SetKernelSize(kernelSizePixel[0],kernelSizePixel[1],kernelSizePixel[2])
     erodeDilate.Update()
     selectedSegmentLabelmap.DeepCopy(erodeDilate.GetOutput())
 
     selectedSegmentLabelmap.Modified()
-    #qt.QApplication.restoreOverrideCursor()
+
 
   def makeDim(self, gridSize, gridSpacing):
     #define the discretisation of the spatial dimension such that
@@ -371,6 +393,43 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
   def calculateDoseMap(self, burnTime):
 
+    temperatureProfile = calculateTemperatureProfile(burnTime)
+
+    centerPoint = int(math.floor(len(temperatureProfile)/2))
+
+    #Set the doseMap based on the above calculations 
+    #only take into account temperature change [ raise ] due to compounding effects of
+    # multiple needles 
+    doseMap = {}
+    tempIndex = centerPoint
+    print temperatureProfile[centerPoint]
+    for i in range(centerPoint+1):
+        realTemp = int(round(temperatureProfile[tempIndex]))
+        if realTemp == 37:
+            tempIndex = tempIndex - 1
+            continue
+        tempChange = realTemp - 37
+        if tempChange <= 2:
+            doseMap[i] = 1
+        elif tempChange <= 4:
+            doseMap[i] = 3
+        elif tempChange < 10:
+            doseMap[i] = 7
+        elif tempChange < 12:
+            doseMap[i] = 10
+        elif tempChange < 15:
+            doseMap[i] = 12
+        elif tempChange < 18:
+            doseMap[i] = 15
+        elif tempChange < 23:
+            doseMap[i] = 18
+        else :
+            doseMap[i] = 23
+        tempIndex = tempIndex - 1
+
+    return doseMap
+
+  def calculateTemperatureProfile(self, burnTime):
     #LIVER TISSUE PROPERTIES 
     density = 1079 # [kg/m^3]
     thermalConductivity = 0.52 # [W/(m.K) ]
@@ -417,20 +476,6 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
     T0_propagator = np.exp( np.multiply( -( np.multiply(D,ftShift) + P),t) ) #CHECKED
     Q_propagator = np.divide( (1 - T0_propagator), ( np.multiply(D,ftShift) + P ) ).reshape((120,1))   #CHECKED 
-    
-
-    # replace Q propagator with limits for k == 0 
-    #   if P == 0, the limit is t 
-    #   if P ~= 0, the limit is (1 - exp(-P*t))/P
-
-    '''
-    In MATLAB - THERE ARE CURRENTLY NO NAN ELEMENTS IN Q_propagator - will implement later
-    if ( numel(P) == 1) && (P == 0)
-        Q_propagator(isnan(Q_propagator)) = t
-    else
-        Q_propagator(isnan(Q_propagator)) = (1 - exp(-P * t)) ./ P
-    '''
-
     T0_propagator = T0_propagator.reshape((120,1))  
     #calculate exact Green's function solution 
     if (len(S) == 1) and ( S == 0 ):
@@ -441,40 +486,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
     T = tempChange + blood_ambientTemperature
      
-    centerPoint = int(math.floor(len(T)/2))
-
-    #Set the doseMap based on the above calculations 
-    #only take into account temperature change [ raise ] due to compounding effects of
-    # multiple needles 
-    doseMap = {}
-    tValue = centerPoint
-    print T[centerPoint]
-    for i in range(centerPoint+1):
-        realTemp = int(round(T[tValue]))
-        if realTemp == 37:
-            tValue = tValue - 1
-            continue
-        tempChange = realTemp - 37
-        if tempChange <= 2:
-            doseMap[i] = 1
-        elif tempChange <= 4:
-            doseMap[i] = 3
-        elif tempChange < 10:
-            doseMap[i] = 7
-        elif tempChange < 12:
-            doseMap[i] = 10
-        elif tempChange < 15:
-            doseMap[i] = 12
-        elif tempChange < 18:
-            doseMap[i] = 15
-        elif tempChange < 23:
-            doseMap[i] = 18
-        else :
-            doseMap[i] = 23
-        tValue = tValue - 1
-
-    return doseMap
-
+    return T
 
   
   def calculateRadialDoseForFiducial(self, needleTip, doseMap, doseVolumeArray, ijkToRasMatrix, needleTipInRAS, needleTipIndex):
