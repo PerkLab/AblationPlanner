@@ -235,9 +235,13 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
   def onCalculateAblationClicked(self):
     inputVolumeNode = self.inputVolumeSelector.currentNode()
     doseVolumeNode = self.doseVolumeSelector.currentNode()
-    if inputVolumeNode is None or doseVolumeNode is None:
+    markupNode = self.markupSelector.currentNode()
+    if inputVolumeNode is None or doseVolumeNode is None :
       logging.error('onCalculateAblationClicked: Invalid anatomic or dose inputImage')
       return
+    if markupNode is None :
+    	logging.error('onCalculateAblationClicked: Invalid markup node')
+    	return 
     burnTime = (self.burnTimeSelector.value) #will always have a valid entry of min 0
     if burnTime == 0 : 
     	logging.error('onCalculateAblationClicked: Time set to burn is 0 - no calculation needed')
@@ -292,6 +296,8 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
 
   def onResetFiducialsClicked(self):
     result = self.logic.resetFiducials(self.markupSelector.currentNode())
+    self.needleEntryCombobox.clear()
+    self.needleTipCombobox.clear()
 
   def onDeleteNeedleClicked(self):
     result = self.logic.deleteNeedleModels(self.inputVolumeSelector.currentNode())
@@ -323,7 +329,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     slicer.mrmlScene.AddNode(self.dvhParameterNode)
 
     
-  def applyTumourMargin(self, inputVolumeNode, segmentationNode) :
+  def applyTumourMargin(self, inputVolumeNode, segmentationNode, marginSizeMm) :
 
     self.segmentEditorNode.SetAndObserveMasterVolumeNode(inputVolumeNode)
     self.segmentEditorNode.SetAndObserveSegmentationNode(segmentationNode)
@@ -366,6 +372,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     selectedSegmentLabelmap.DeepCopy(erodeDilate.GetOutput())
 
     selectedSegmentLabelmap.Modified()
+    create = segmentationNode.CreateClosedSurfaceRepresentation()
 
 
   def makeDim(self, gridSize, gridSpacing):
@@ -393,7 +400,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
   def calculateDoseMap(self, burnTime):
 
-    temperatureProfile = calculateTemperatureProfile(burnTime)
+    temperatureProfile = self.calculateTemperatureProfile(burnTime)
 
     centerPoint = int(math.floor(len(temperatureProfile)/2))
 
@@ -423,8 +430,10 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
             doseMap[i] = 15
         elif tempChange < 23:
             doseMap[i] = 18
-        else :
+        elif tempChange < 43:
             doseMap[i] = 23
+        else :
+        	doseMap[i] = 24
         tempIndex = tempIndex - 1
 
     return doseMap
@@ -455,7 +464,8 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     kx_vec = self.makeDim(gridSize, gridSpacing) #CHECKED : same output as matlab 
 
     #kgrid.x - grid containing repeated copies of the grid coordinates in the x-direction 
-    grid = np.divide( np.multiply( np.multiply(gridSize,kx_vec),gridSpacing), (2 * math.pi * 100) ) #TODO : Find why the values are off by /100
+    grid = np.divide( np.multiply( np.multiply(gridSize,kx_vec),gridSpacing), (2 * math.pi * 100) ) 
+    
     
     #kgrid.k - Nx x Ny x Nz grid of the scalar wavenumber where k = sqrt(kx.^2 + ky.^2 + kz.^2) [rad/m]
     kgrid = np.sqrt(np.power( kx_vec,2 ) )
@@ -541,12 +551,6 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
   def createIsodoseSurfaces(self, doseVolumeNode):
 
     logging.info('calculating Isodose volume')
-    #TODO: Have our own isodose parameter node
-    #      - Create isodose parameter node in logic constructor. Add it to the scene!
-    #      - In this function set the parameters in the parameter node (dose volume node, color table node, using SetAndObserveDoseVolumeNode etc.)
-    #      - Get isodose logic: logic = slicer.modules.isodose.logic()
-    #      - Calculate isodose: logic.CreateIsodoseSurfaces(self.isodoseParameterNode)
-
     isodoseLogic = slicer.modules.isodose.logic()
     
     #DOSE VOLUME NODE 
