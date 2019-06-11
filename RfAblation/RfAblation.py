@@ -105,9 +105,16 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.segmentationSelector.showChildNodeTypes = False
     self.segmentationSelector.setMRMLScene( slicer.mrmlScene )
     self.segmentationSelector.setToolTip("Pick the correct segmentation node")
+    self.segmentationSelector.connect('currentNodeChanged(vtkMRMLNode*)', self.populateLesionSegmentSelection )
     parameterFormLayout.addRow('    Segmentation Node : ', self.segmentationSelector)
 
     gridLayout.addLayout(parameterFormLayout,1,0,3,2)
+
+    #Set Lesion segment - This combobox will be populated based on the selected segmentation node
+    lesionLabel = qt.QLabel('   Lesion Segment :')
+    self.lesionSelector = qt.QComboBox()
+    gridLayout.addWidget(lesionLabel, 0 , 2)
+    gridLayout.addWidget(self.lesionSelector, 0, 3)
 
     #Margin Button 
     marginLabel = qt.QLabel("   Set a margin of : ")
@@ -136,10 +143,6 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.markupSelector.setMRMLScene( slicer.mrmlScene )
     self.markupSelector.setToolTip( "Pick the markup list" )
     self.markupSelector.connect('currentNodeChanged(vtkMRMLNode*)', self.onMarkupsNodeSelectionChanged)
-
-    # # Add vertical spacer
-    # self.layout.addStretch(1)
-    # space = qt.QLabel("\n")
 
     #ADD BURNING TIME MANAGEMENT 
     burnTimeSelector = qt.QSpinBox()
@@ -289,8 +292,13 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     if inputVolumeNode is None or segmentationNode is None : 
         logging.error('onCalcMarginClicked: Invalid input volume or segmentation node')
         return
+    lesionSegment = self.lesionSelector.currentText
+    print lesionSegment
+    if lesionSegment is None:
+    	loggin.error('onCalcMarginClicked: Invalid or no lesion segment selected')
+    	return
     marginSizeMm = self.marginSizeSelector.value #minimum set to 0 in selector 
-    result = self.logic.applyTumourMargin(self.inputVolumeSelector.currentNode(), self.segmentationSelector.currentNode(), marginSizeMm)
+    result = self.logic.applyTumourMargin(self.inputVolumeSelector.currentNode(), self.segmentationSelector.currentNode(), self.lesionSelector.currentText,marginSizeMm)
 
     self.rfaParameterNode.SetParameter(self.SEGMENTATION, segmentationNode.GetID() )
     self.rfaParameterNode.SetParameter(self.MARGIN_SIZE_MM, str(marginSizeMm) )
@@ -315,6 +323,18 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.rfaParameterNode.SetParameter(self.MARKUP_LIST, markupNode.GetID() )
     self.rfaParameterNode.SetParameter(self.BURN_TIME, str(burnTime))
    	#TODO : USE A REFERENCE ID FOR THE VOLUMES 
+
+  def populateLesionSegmentSelection(self):
+  	segmentationNode = self.segmentationSelector.currentNode()
+  	if segmentationNode is None: 
+  		logging.error('populateLesionSegmentSelection: no segmentation node')
+  		return
+  	self.lesionSelector.clear()
+  	segmentation = segmentationNode.GetSegmentation()
+  	numberOfSegments = segmentation.GetNumberOfSegments()
+  	for segment in range(numberOfSegments):
+  		segmentName = segmentation.GetNthSegment(segment).GetName()
+  		self.lesionSelector.addItem(segmentName, segment)
 
   def onMarkupsNodeSelectionChanged(self):
     markupsNode = self.markupSelector.currentNode()
@@ -398,7 +418,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     slicer.mrmlScene.AddNode(self.dvhParameterNode)
 
     
-  def applyTumourMargin(self, inputVolumeNode, segmentationNode, marginSizeMm) :
+  def applyTumourMargin(self, inputVolumeNode, segmentationNode, lesionSegment, marginSizeMm) :
 
     self.segmentEditorNode.SetAndObserveMasterVolumeNode(inputVolumeNode)
     self.segmentEditorNode.SetAndObserveSegmentationNode(segmentationNode)
@@ -409,7 +429,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     marginColor = 80 
     marginSegment = segmentationNode.GetSegmentation().AddEmptySegment(marginSegmentID, marginSegmentName, [0.1,0.5,1])
 
-    modifierID = segmentationNode.GetSegmentation().GetSegmentIdBySegmentName('tumour') #TODO: INPUT 
+    modifierID = segmentationNode.GetSegmentation().GetSegmentIdBySegmentName(lesionSegment) #TODO: INPUT 
     modifierSegment = segmentationNode.GetSegmentation().GetSegment(modifierID)
     modifierSegmentLabelmap = modifierSegment.GetRepresentation(vtkSegmentationCore.vtkSegmentationConverter.GetSegmentationBinaryLabelmapRepresentationName())
 
