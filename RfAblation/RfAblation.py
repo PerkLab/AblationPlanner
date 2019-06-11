@@ -20,16 +20,9 @@ class RfAblation(ScriptedLoadableModule):
     self.parent.title = "RF Ablation" # TODO make this more human readable by adding spaces
     self.parent.categories = ["Radiotherapy"]
     self.parent.dependencies = ["Isodose", "DoseVolumeHistogram"]
-    self.parent.contributors = ["John Doe (AnyWare Corp.)"] # replace with "Firstname Lastname (Organization)"
-    self.parent.helpText = """
-This is an example of scripted loadable module bundled in an extension.
-It performs a simple thresholding on the input volume and optionally captures a screenshot.
-"""
-    self.parent.helpText += self.getDefaultModuleDocumentationLink()
-    self.parent.acknowledgementText = """
-This file was originally developed by Jean-Christophe Fillion-Robin, Kitware Inc.
-and Steve Pieper, Isomics, Inc. and was partially funded by NIH grant 3P41RR013218-12S1.
-""" # replace with organization, grant and thanks.
+    self.parent.contributors = ["John Doe (AnyWare Corp.)"]
+
+
 
 #
 # RfAblationWidget
@@ -48,18 +41,22 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     #
     # Parameters Area
     #
+    inputParametersCollapsibleButton = ctk.ctkCollapsibleButton()
+    inputParametersCollapsibleButton.text = "Import Parameters"
+    self.layout.addWidget(inputParametersCollapsibleButton)
+
+    #IMPORT NEEDLE PLAN 
+    inputFormLayout = qt.QFormLayout(inputParametersCollapsibleButton)
+    self.inputParametersSelector = slicer.qMRMLNodeComboBox()
+    #self.inputParametersSelector.nodeTypes = 
+    self.inputParametersButton = qt.QPushButton('Import these parameters as an ablation plan')
+    inputFormLayout.addRow('Select needle plan node : ', self.inputParametersSelector)
+    inputFormLayout.addWidget(self.inputParametersButton)
+
     parametersCollapsibleButton = ctk.ctkCollapsibleButton()
     parametersCollapsibleButton.text = "Parameters"
     self.layout.addWidget(parametersCollapsibleButton)
-
-    # Layout within the dummy collapsible button
-    ##parametersFormLayout = qt.QFormLayout(parametersCollapsibleButton)
-    #parametersGridLayout = qt.QHBoxLayout(parametersCollapsibleButton)
-    ##parametersFormLayout.setHorizontalSpacing(2)
-    ##parametersFormLayout.setVerticalSpacing(2)
     gridLayout = qt.QGridLayout(parametersCollapsibleButton)
-    #gridLayout.setHorizontalSpacing(3)
-    #gridLayout.setVerticalSpacing(5)
 
      #INTRO 
     intro = qt.QLabel("Place markups as ablation points onto the segmented lesion \n ")
@@ -217,6 +214,69 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     # Create logic
     self.logic = RfAblationLogic()
 
+    #Create or get parameter node 
+    self.rfaParameterNode = self.setParameters()
+
+
+  def setParameters(self) :
+
+    #
+    #Load parameter node or create a new one if one does not exist
+    #
+    #
+    scriptedModuleLogic = slicer.ScriptedLoadableModule.ScriptedLoadableModuleLogic()
+    self.rfaParameterNode = scriptedModuleLogic.getParameterNode()
+    paramNum = self.rfaParameterNode.GetParameterCount()
+
+    print paramNum, "Number of parameters"
+
+    #Set parameter name constants
+    self.INPUT_VOLUME = "inputVolumeName"
+    self.DOSE_VOLUME = "doseVolumeName"
+    self.SEGMENTATION = "segmentationName"
+    self.MARGIN_SIZE_MM = "marginSizeMm"
+    self.MARKUP_LIST = "markupNodeName"
+    self.BURN_TIME = "burnTime"
+
+    #Check if the loaded scene was created with any of the following parameters 
+    #If so load them in
+    if paramNum != 0 :
+    	setParameters = self.rfaParameterNode.GetParameterNames()
+    	for name in setParameters:
+    		value = self.rfaParameterNode.GetParameter(name)
+    		if name == self.INPUT_VOLUME:
+    			node = slicer.mrmlScene.GetNodeByID(value)
+    			if node is None:
+    				logging.warning('referenced input volume does not exist - select new volume')
+    			else:
+    				self.inputVolumeSelector.setCurrentNode(node)
+    		if name == self.DOSE_VOLUME:
+    			node = slicer.mrmlScene.GetNodeByID(value)
+    			if node is None:
+    				logging.warning('referenced dose volume does not exist - select new volume')
+    			else :
+    				self.doseVolumeSelector.setCurrentNode(node)
+    		if name == self.SEGMENTATION:
+    			node = slicer.mrmlScene.GetNodeByID(value)
+    			if node is None:
+    				logging.warning('referenced segmentation node does not exist - select new node')
+    			else :
+    				self.segmentationSelector.setCurrentNode(node)
+    		if name == self.MARGIN_SIZE_MM:
+    			self.marginSizeSelector.setValue(int(value))
+    		if name == self.MARKUP_LIST:
+    			node = slicer.mrmlScene.GetNodeByID(value)
+    			if node is None:
+    				logging.warning('referenced markup list does not exist - select new markup node')
+    			else :
+    				self.markupSelector.setCurrentNode(node)
+    		if name == self.BURN_TIME:
+    			self.burnTimeSelector.setValue(int(value))
+
+    return self.rfaParameterNode
+  
+    
+
   def cleanup(self):
     pass
 
@@ -232,6 +292,9 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     marginSizeMm = self.marginSizeSelector.value #minimum set to 0 in selector 
     result = self.logic.applyTumourMargin(self.inputVolumeSelector.currentNode(), self.segmentationSelector.currentNode(), marginSizeMm)
 
+    self.rfaParameterNode.SetParameter(self.SEGMENTATION, segmentationNode.GetID() )
+    self.rfaParameterNode.SetParameter(self.MARGIN_SIZE_MM, str(marginSizeMm) )
+
   def onCalculateAblationClicked(self):
     inputVolumeNode = self.inputVolumeSelector.currentNode()
     doseVolumeNode = self.doseVolumeSelector.currentNode()
@@ -246,6 +309,12 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     if burnTime == 0 : 
     	logging.error('onCalculateAblationClicked: Time set to burn is 0 - no calculation needed')
     result = self.logic.calculateAblationDose(self.inputVolumeSelector.currentNode(), self.doseVolumeSelector.currentNode(), burnTime, self.markupSelector.currentNode())
+
+    self.rfaParameterNode.SetParameter(self.INPUT_VOLUME, inputVolumeNode.GetID() )
+    self.rfaParameterNode.SetParameter(self.DOSE_VOLUME, doseVolumeNode.GetID() )
+    self.rfaParameterNode.SetParameter(self.MARKUP_LIST, markupNode.GetID() )
+    self.rfaParameterNode.SetParameter(self.BURN_TIME, str(burnTime))
+   	#TODO : USE A REFERENCE ID FOR THE VOLUMES 
 
   def onMarkupsNodeSelectionChanged(self):
     markupsNode = self.markupSelector.currentNode()
