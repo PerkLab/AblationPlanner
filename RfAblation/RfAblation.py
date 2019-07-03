@@ -39,7 +39,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     # Instantiate and connect widgets ...
 
     #
-    # Parameters Area
+    # Input A plan area 
     #
     inputParametersCollapsibleButton = ctk.ctkCollapsibleButton()
     inputParametersCollapsibleButton.text = "Import Parameters"
@@ -53,6 +53,9 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     inputFormLayout.addRow('Select needle plan node : ', self.inputParametersSelector)
     inputFormLayout.addWidget(self.inputParametersButton)
 
+	#
+    # Parameters Area
+    #
     parametersCollapsibleButton = ctk.ctkCollapsibleButton()
     parametersCollapsibleButton.text = "Parameters"
     self.layout.addWidget(parametersCollapsibleButton)
@@ -108,16 +111,13 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.segmentationSelector.connect('currentNodeChanged(vtkMRMLNode*)', self.populateLesionSegmentSelection )
     parameterFormLayout.addRow('    Segmentation Node : ', self.segmentationSelector)
 
-    gridLayout.addLayout(parameterFormLayout,1,0,3,2)
-
     #Set Lesion segment - This combobox will be populated based on the selected segmentation node
-    lesionLabel = qt.QLabel('   Lesion Segment :')
     self.lesionSelector = qt.QComboBox()
-    gridLayout.addWidget(lesionLabel, 0 , 2)
-    gridLayout.addWidget(self.lesionSelector, 0, 3)
+    parameterFormLayout.addRow('   Lesion Segment : ', self.lesionSelector)
+
+    gridLayout.addLayout(parameterFormLayout,1,0)
 
     #Margin Button 
-    marginLabel = qt.QLabel("   Set a margin of : ")
     marginButton = qt.QPushButton("Apply")
     marginButton.connect('clicked(bool)', self.onCalcMarginClicked)
     self.marginButton = marginButton
@@ -126,9 +126,10 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     marginSizeSelector.setSuffix(' mm')
     self.marginSizeSelector = marginSizeSelector
 
-    gridLayout.addWidget(marginLabel, 1, 2)
-    gridLayout.addWidget(self.marginSizeSelector, 1,3)
-    gridLayout.addWidget(self.marginButton, 1, 4)
+    marginFormLayout = qt.QFormLayout()
+    marginFormLayout.addRow("   Set a margin of : ", self.marginSizeSelector)
+    gridLayout.addLayout(marginFormLayout,2,0)
+    gridLayout.addWidget(self.marginButton, 2, 1)
 
     # MarkUp list selector
     #
@@ -155,7 +156,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     markupFormLayout = qt.QFormLayout()
     markupFormLayout.addRow('   Pick the markup list: ', self.markupSelector)
     markupFormLayout.addRow('   Set burn time :', self.burnTimeSelector)
-    gridLayout.addLayout(markupFormLayout, 2,2,2,3)
+    gridLayout.addLayout(markupFormLayout, 3,0)
 
     #CALC BUTTON
     calcButton = qt.QPushButton("Calculate Ablation")
@@ -164,7 +165,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.layout.addStretch(1)
     self.calcButton = calcButton
 
-    gridLayout.addWidget(calcButton, 4, 1, 1, 3)
+    gridLayout.addWidget(calcButton, 4,0)
 
     #DoseVolumeHistogram BUTTON
     dvhButton = qt.QPushButton("Get Dose Volume Histogram of the current plan")
@@ -172,12 +173,21 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.layout.addStretch(2)
     self.dvhButton = dvhButton
 
-    gridLayout.addWidget(dvhButton, 5,1,1,3)
+    gridLayout.addWidget(dvhButton,5,0)
+
+    #
+    # Set Needle Plan 
+    #
+    needleParametersCollapsibleButton = ctk.ctkCollapsibleButton()
+    needleParametersCollapsibleButton.text = "Set Needle Plan"
+    self.layout.addWidget(needleParametersCollapsibleButton)
+
+    #IMPORT NEEDLE PLAN 
+    needleFormLayout = qt.QFormLayout(needleParametersCollapsibleButton)
 
     #SET UP NEEDLE PLAN 
     entryText = qt.QLabel("\n Once you are happy with the ablation of the tumor, set new fiducials as entry points.\n")
-    gridLayout.addWidget(entryText, 6,0,1,4)
-
+    needleFormLayout.addWidget(entryText)
 
     #ENTRY POINT 
     self.needleEntryCombobox = qt.QComboBox()
@@ -193,26 +203,22 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.needleButton = needleButton
     self.needleIndex = 0
 
-    needleFormLayout = qt.QFormLayout()
     needleFormLayout.addRow('   Needle Entry point : ', self.needleEntryCombobox)
     needleFormLayout.addRow('   Needle Tip point : ', self.needleTipCombobox)
     needleFormLayout.addWidget(needleButton)
-    gridLayout.addLayout(needleFormLayout, 7,0, 3, 2)
 
 
     #RESET fIDUCIALS BUTTON
     resetFiducialsButton = qt.QPushButton("Reset Fiducials")
     resetFiducialsButton.connect('clicked(bool)', self.onResetFiducialsClicked)
-    self.layout.addStretch(1)
     self.resetFiducialsButton = resetFiducialsButton
-    gridLayout.addWidget(self.resetFiducialsButton, 7 ,3, 1, 1)
+    needleFormLayout.addWidget(self.resetFiducialsButton)
 
     #DELETE CURRENT NEEDLES BUTTON
     resetNeedleButton = qt.QPushButton("Delete Current Needles")
     resetNeedleButton.connect('clicked(bool)', self.onDeleteNeedleClicked)
-    self.layout.addStretch(2)
     self.resetNeedleButton = resetNeedleButton
-    gridLayout.addWidget(self.resetNeedleButton, 8,3,1,1)
+    needleFormLayout.addWidget(self.resetNeedleButton)
 
     # Create logic
     self.logic = RfAblationLogic()
@@ -265,6 +271,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     				logging.warning('referenced segmentation node does not exist - select new node')
     			else :
     				self.segmentationSelector.setCurrentNode(node)
+    				self.populateLesionSegmentSelection()
     		if name == self.MARGIN_SIZE_MM:
     			self.marginSizeSelector.setValue(int(value))
     		if name == self.MARKUP_LIST:
