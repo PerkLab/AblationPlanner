@@ -203,6 +203,8 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.needleButton = needleButton
     self.needleIndex = 0
 
+    self.needleFiducialPairList = []
+
     needleFormLayout.addRow('   Needle Entry point : ', self.needleEntryCombobox)
     needleFormLayout.addRow('   Needle Tip point : ', self.needleTipCombobox)
     needleFormLayout.addWidget(needleButton)
@@ -317,13 +319,18 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     if inputVolumeNode is None or doseVolumeNode is None :
       logging.error('onCalculateAblationClicked: Invalid anatomic or dose inputImage')
       return
+    if doseVolumeNode.GetImageData() is None:
+    	#User has not imported a dose volume and is creating a new volume
+    	volumeLogic = slicer.modules.volumes.logic()
+    	doseVolumeName = 'DoseVolume' + str(inputVolumeNode.GetName())
+    	doseVolumeNode = volumeLogic.CloneVolume(inputVolumeNode, doseVolumeName)
     if markupNode is None :
     	logging.error('onCalculateAblationClicked: Invalid markup node')
     	return 
     burnTime = (self.burnTimeSelector.value) #will always have a valid entry of min 0
     if burnTime == 0 : 
     	logging.error('onCalculateAblationClicked: Time set to burn is 0 - no calculation needed')
-    result = self.logic.calculateAblationDose(self.inputVolumeSelector.currentNode(), self.doseVolumeSelector.currentNode(), burnTime, self.markupSelector.currentNode())
+    result = self.logic.calculateAblationDose(self.inputVolumeSelector.currentNode(), doseVolumeNode, burnTime, self.markupSelector.currentNode())
 
     self.rfaParameterNode.SetParameter(self.INPUT_VOLUME, inputVolumeNode.GetID() )
     self.rfaParameterNode.SetParameter(self.DOSE_VOLUME, doseVolumeNode.GetID() )
@@ -344,12 +351,19 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
   		self.lesionSelector.addItem(segmentName, segment)
 
   def onMarkupsNodeSelectionChanged(self):
-    markupsNode = self.markupSelector.currentNode()
-    if markupsNode is None:
+    self.markupsNode = self.markupSelector.currentNode()
+    if self.markupsNode is None:
         logging.error('onMarkupsNodeSelectionChanged: Invalid Markups Node')
         return
+
+    self.markupsNodeObserver = self.markupsNode.AddObserver(vtk.vtkCommand.ModifiedEvent, self.updateFiducialModels )
     self.oldnumberOfMarkers = 0
     self.populateNeedleEntryComboBox()
+
+  def updateFiducialModels(self, caller=None, event=None):
+  	print "fiducial being moved"
+  	numberOfNeedles = len(self.needleFiducialPairList)
+
 
   def populateNeedleEntryComboBox(self):
     markupsNode = self.markupSelector.currentNode()
@@ -386,6 +400,8 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     if markupsNode is None:
       logging.error('onAddNeedleClicked: Invalid markupsNode selected')
       return
+
+    self.needleFiducialPairList.append([entryPointIndex, tipPointIndex, needleIndex])
 
     resultMessage = self.logic.createNeedleModel(entryPointIndex, tipPointIndex, self.inputVolumeSelector.currentNode(), self.markupSelector.currentNode(), self.needleIndex)
     logging.info(str(resultMessage))
