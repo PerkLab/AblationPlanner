@@ -361,8 +361,19 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.populateNeedleEntryComboBox()
 
   def updateFiducialModels(self, caller=None, event=None):
+  	#self.needleNodeReferenceRole = 'NeedleRef'
+  	inputVolumeNode = self.inputVolumeSelector.currentNode()
   	print "fiducial being moved"
   	numberOfNeedles = len(self.needleFiducialPairList)
+  	if numberOfNeedles > 0:
+  		for num in range(numberOfNeedles):
+  			needleInfo = self.needleFiducialPairList[num]
+  			print needleInfo
+  			needleModelNode = inputVolumeNode.GetNthNodeReference('NeedleRef', needleInfo[2]) #TODO: remove the hard coded name
+			slicer.mrmlScene.RemoveNode(needleModelNode)
+
+  			result = self.logic.createNeedleModel(needleInfo[0],needleInfo[1], inputVolumeNode, self.markupSelector.currentNode(), needleInfo[2])
+
 
 
   def populateNeedleEntryComboBox(self):
@@ -401,7 +412,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
       logging.error('onAddNeedleClicked: Invalid markupsNode selected')
       return
 
-    self.needleFiducialPairList.append([entryPointIndex, tipPointIndex, needleIndex])
+    self.needleFiducialPairList.append([entryPointIndex, tipPointIndex, self.needleIndex])
 
     resultMessage = self.logic.createNeedleModel(entryPointIndex, tipPointIndex, self.inputVolumeSelector.currentNode(), self.markupSelector.currentNode(), self.needleIndex)
     logging.info(str(resultMessage))
@@ -414,7 +425,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
   def onDeleteNeedleClicked(self):
     result = self.logic.deleteNeedleModels(self.inputVolumeSelector.currentNode())
     self.needleIndex = 0
-
+    self.needleFiducialPairList = [] 
 #
 # RfAblationLogic
 #
