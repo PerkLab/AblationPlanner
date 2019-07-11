@@ -368,12 +368,13 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
   	if numberOfNeedles > 0:
   		for num in range(numberOfNeedles):
   			needleInfo = self.needleFiducialPairList[num]
-  			print needleInfo
-  			needleModelNode = inputVolumeNode.GetNthNodeReference('NeedleRef', needleInfo[2]) #TODO: remove the hard coded name
+  			needleModelNode = inputVolumeNode.GetNthNodeReference('NeedleRef', (needleInfo[2]-1)) #TODO: remove the hard coded name
 			slicer.mrmlScene.RemoveNode(needleModelNode)
 
+		for create in range(numberOfNeedles):
+			needleInfo = self.needleFiducialPairList[create]
+			print create, needleInfo
   			result = self.logic.createNeedleModel(needleInfo[0],needleInfo[1], inputVolumeNode, self.markupSelector.currentNode(), needleInfo[2])
-
 
 
   def populateNeedleEntryComboBox(self):
