@@ -149,6 +149,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     burnTimeSelector = qt.QSpinBox()
     burnTimeSelector.setMinimum(0)
     burnTimeSelector.setMaximum(1800) # 30 mins 
+    burnTimeSelector.setValue(200) #recommended minimum 
     burnTimeSelector.setSingleStep(10)
     burnTimeSelector.setSuffix('s')
     self.burnTimeSelector = burnTimeSelector
@@ -366,6 +367,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
   	print "fiducial being moved"
   	numberOfNeedles = len(self.needleFiducialPairList)
   	if numberOfNeedles > 0:
+  		print numberOfNeedles
   		for num in range(numberOfNeedles):
   			needleInfo = self.needleFiducialPairList[num]
   			needleModelNode = inputVolumeNode.GetNthNodeReference('NeedleRef', (needleInfo[2]-1)) #TODO: remove the hard coded name
@@ -541,23 +543,23 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
             continue
         tempChange = realTemp - 37
         if tempChange <= 2:
-            doseMap[i] = 1
+            doseMap[i] = 39
         elif tempChange <= 4:
-            doseMap[i] = 3
+            doseMap[i] = 41
         elif tempChange < 10:
-            doseMap[i] = 7
+            doseMap[i] = 46
         elif tempChange < 12:
-            doseMap[i] = 10
+            doseMap[i] = 48
         elif tempChange < 15:
-            doseMap[i] = 12
+            doseMap[i] = 51
         elif tempChange < 18:
-            doseMap[i] = 15
+            doseMap[i] = 54
         elif tempChange < 23:
-            doseMap[i] = 18
+            doseMap[i] = 59
         elif tempChange < 43:
-            doseMap[i] = 23
+            doseMap[i] = 65
         else :
-        	doseMap[i] = 24
+        	doseMap[i] = 100
         tempIndex = tempIndex - 1
 
     return doseMap
@@ -687,14 +689,14 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     #COLOR TABLE NODE
     isodoseColorTableNode = isodoseLogic.SetupColorTableNodeForDoseVolumeNode(doseVolumeNode)
     isodoseLogic.SetNumberOfIsodoseLevels(self.isodoseParameterNode, 8)
-    isodoseColorTableNode.SetColor(0, "1" , 0, 1, 0, 0.2)
-    isodoseColorTableNode.SetColor(1, "3" ,0.1, 0.9, 0.5, 0.2)
-    isodoseColorTableNode.SetColor(2, "7" ,1, 1, 0.4, 0.2)
-    isodoseColorTableNode.SetColor(3, "10" , 1, 0.9, 0.1, 0.2)
-    isodoseColorTableNode.SetColor(4, "12" ,1, 0.5, 0.1, 0.2)
-    isodoseColorTableNode.SetColor(5, "15" ,1, 0, 0, 0.2)
-    isodoseColorTableNode.SetColor(6, "18" ,0.6, 0, 0.6, 0.2) #55C [+18] is significant thermal injury
-    isodoseColorTableNode.SetColor(7, "23" ,0.4, 0.1, 0, 0.2)
+    isodoseColorTableNode.SetColor(0, "39" , 0, 1, 0, 0.2)
+    isodoseColorTableNode.SetColor(1, "41" ,0.1, 0.9, 0.5, 0.2)
+    isodoseColorTableNode.SetColor(2, "46" ,1, 1, 0.4, 0.2)
+    isodoseColorTableNode.SetColor(3, "48" , 1, 0.9, 0.1, 0.2)
+    isodoseColorTableNode.SetColor(4, "51" ,1, 0.5, 0.1, 0.2)
+    isodoseColorTableNode.SetColor(5, "54" ,1, 0, 0, 0.2)
+    isodoseColorTableNode.SetColor(6, "59" ,0.6, 0, 0.6, 0.2) #55C [+18] is significant thermal injury
+    isodoseColorTableNode.SetColor(7, "65" ,0.4, 0.1, 0, 0.2)
 
     isodoseLogic.CreateIsodoseSurfaces(self.isodoseParameterNode)
 
