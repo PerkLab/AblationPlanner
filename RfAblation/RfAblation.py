@@ -325,6 +325,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     	volumeLogic = slicer.modules.volumes.logic()
     	doseVolumeName = 'DoseVolume' + str(inputVolumeNode.GetName())
     	doseVolumeNode = volumeLogic.CloneVolume(inputVolumeNode, doseVolumeName)
+    	self.doseVolumeSelector.setCurrentNode(doseVolumeNode)
     if markupNode is None :
     	logging.error('onCalculateAblationClicked: Invalid markup node')
     	return 
