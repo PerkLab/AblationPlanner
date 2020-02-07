@@ -18,9 +18,9 @@ class RfAblation(ScriptedLoadableModule):
   def __init__(self, parent):
     ScriptedLoadableModule.__init__(self, parent)
     self.parent.title = "RF Ablation" # TODO make this more human readable by adding spaces
-    self.parent.categories = ["Radiotherapy"]
+    self.parent.categories = ["Ablation"]
     self.parent.dependencies = ["Isodose", "DoseVolumeHistogram"]
-    self.parent.contributors = ["John Doe (AnyWare Corp.)"]
+    self.parent.contributors = ["Alice Santilli & Bote Jiang (Queen's University)"]
 
 
 
@@ -53,7 +53,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     inputFormLayout.addRow('Select needle plan node : ', self.inputParametersSelector)
     inputFormLayout.addWidget(self.inputParametersButton)
 
-	#
+    #
     # Parameters Area
     #
     parametersCollapsibleButton = ctk.ctkCollapsibleButton()
@@ -240,7 +240,7 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.rfaParameterNode = scriptedModuleLogic.getParameterNode()
     paramNum = self.rfaParameterNode.GetParameterCount()
 
-    print paramNum, "Number of parameters"
+    print("Number of parameters: {}".format(paramNum))
 
     #Set parameter name constants
     self.INPUT_VOLUME = "inputVolumeName"
@@ -253,38 +253,38 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     #Check if the loaded scene was created with any of the following parameters 
     #If so load them in
     if paramNum != 0 :
-    	setParameters = self.rfaParameterNode.GetParameterNames()
-    	for name in setParameters:
-    		value = self.rfaParameterNode.GetParameter(name)
-    		if name == self.INPUT_VOLUME:
-    			node = slicer.mrmlScene.GetNodeByID(value)
-    			if node is None:
-    				logging.warning('referenced input volume does not exist - select new volume')
-    			else:
-    				self.inputVolumeSelector.setCurrentNode(node)
-    		if name == self.DOSE_VOLUME:
-    			node = slicer.mrmlScene.GetNodeByID(value)
-    			if node is None:
-    				logging.warning('referenced dose volume does not exist - select new volume')
-    			else :
-    				self.doseVolumeSelector.setCurrentNode(node)
-    		if name == self.SEGMENTATION:
-    			node = slicer.mrmlScene.GetNodeByID(value)
-    			if node is None:
-    				logging.warning('referenced segmentation node does not exist - select new node')
-    			else :
-    				self.segmentationSelector.setCurrentNode(node)
-    				self.populateLesionSegmentSelection()
-    		if name == self.MARGIN_SIZE_MM:
-    			self.marginSizeSelector.setValue(int(value))
-    		if name == self.MARKUP_LIST:
-    			node = slicer.mrmlScene.GetNodeByID(value)
-    			if node is None:
-    				logging.warning('referenced markup list does not exist - select new markup node')
-    			else :
-    				self.markupSelector.setCurrentNode(node)
-    		if name == self.BURN_TIME:
-    			self.burnTimeSelector.setValue(int(value))
+      setParameters = self.rfaParameterNode.GetParameterNames()
+      for name in setParameters:
+        value = self.rfaParameterNode.GetParameter(name)
+        if name == self.INPUT_VOLUME:
+          node = slicer.mrmlScene.GetNodeByID(value)
+          if node is None:
+            logging.warning('referenced input volume does not exist - select new volume')
+          else:
+            self.inputVolumeSelector.setCurrentNode(node)
+        if name == self.DOSE_VOLUME:
+          node = slicer.mrmlScene.GetNodeByID(value)
+          if node is None:
+            logging.warning('referenced dose volume does not exist - select new volume')
+          else :
+            self.doseVolumeSelector.setCurrentNode(node)
+        if name == self.SEGMENTATION:
+          node = slicer.mrmlScene.GetNodeByID(value)
+          if node is None:
+            logging.warning('referenced segmentation node does not exist - select new node')
+          else :
+            self.segmentationSelector.setCurrentNode(node)
+            self.populateLesionSegmentSelection()
+        if name == self.MARGIN_SIZE_MM:
+          self.marginSizeSelector.setValue(int(value))
+        if name == self.MARKUP_LIST:
+          node = slicer.mrmlScene.GetNodeByID(value)
+          if node is None:
+            logging.warning('referenced markup list does not exist - select new markup node')
+          else :
+            self.markupSelector.setCurrentNode(node)
+        if name == self.BURN_TIME:
+          self.burnTimeSelector.setValue(int(value))
 
     return self.rfaParameterNode
   
@@ -303,10 +303,10 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
         logging.error('onCalcMarginClicked: Invalid input volume or segmentation node')
         return
     lesionSegment = self.lesionSelector.currentText
-    print lesionSegment
+    print(lesionSegment)
     if lesionSegment is None:
-    	loggin.error('onCalcMarginClicked: Invalid or no lesion segment selected')
-    	return
+      loggin.error('onCalcMarginClicked: Invalid or no lesion segment selected')
+      return
     marginSizeMm = self.marginSizeSelector.value #minimum set to 0 in selector 
     result = self.logic.applyTumourMargin(self.inputVolumeSelector.currentNode(), self.segmentationSelector.currentNode(), self.lesionSelector.currentText,marginSizeMm)
 
@@ -321,36 +321,36 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
       logging.error('onCalculateAblationClicked: Invalid anatomic or dose inputImage')
       return
     if doseVolumeNode.GetImageData() is None:
-    	#User has not imported a dose volume and is creating a new volume
-    	volumeLogic = slicer.modules.volumes.logic()
-    	doseVolumeName = 'DoseVolume' + str(inputVolumeNode.GetName())
-    	doseVolumeNode = volumeLogic.CloneVolume(inputVolumeNode, doseVolumeName)
-    	self.doseVolumeSelector.setCurrentNode(doseVolumeNode)
+      #User has not imported a dose volume and is creating a new volume
+      volumeLogic = slicer.modules.volumes.logic()
+      doseVolumeName = 'DoseVolume' + str(inputVolumeNode.GetName())
+      doseVolumeNode = volumeLogic.CloneVolume(inputVolumeNode, doseVolumeName)
+      self.doseVolumeSelector.setCurrentNode(doseVolumeNode)
     if markupNode is None :
-    	logging.error('onCalculateAblationClicked: Invalid markup node')
-    	return 
+      logging.error('onCalculateAblationClicked: Invalid markup node')
+      return 
     burnTime = (self.burnTimeSelector.value) #will always have a valid entry of min 0
     if burnTime == 0 : 
-    	logging.error('onCalculateAblationClicked: Time set to burn is 0 - no calculation needed')
+      logging.error('onCalculateAblationClicked: Time set to burn is 0 - no calculation needed')
     result = self.logic.calculateAblationDose(self.inputVolumeSelector.currentNode(), doseVolumeNode, burnTime, self.markupSelector.currentNode())
 
     self.rfaParameterNode.SetParameter(self.INPUT_VOLUME, inputVolumeNode.GetID() )
     self.rfaParameterNode.SetParameter(self.DOSE_VOLUME, doseVolumeNode.GetID() )
     self.rfaParameterNode.SetParameter(self.MARKUP_LIST, markupNode.GetID() )
     self.rfaParameterNode.SetParameter(self.BURN_TIME, str(burnTime))
-   	#TODO : USE A REFERENCE ID FOR THE VOLUMES 
+     #TODO : USE A REFERENCE ID FOR THE VOLUMES 
 
   def populateLesionSegmentSelection(self):
-  	segmentationNode = self.segmentationSelector.currentNode()
-  	if segmentationNode is None: 
-  		logging.error('populateLesionSegmentSelection: no segmentation node')
-  		return
-  	self.lesionSelector.clear()
-  	segmentation = segmentationNode.GetSegmentation()
-  	numberOfSegments = segmentation.GetNumberOfSegments()
-  	for segment in range(numberOfSegments):
-  		segmentName = segmentation.GetNthSegment(segment).GetName()
-  		self.lesionSelector.addItem(segmentName, segment)
+    segmentationNode = self.segmentationSelector.currentNode()
+    if segmentationNode is None: 
+      logging.error('populateLesionSegmentSelection: no segmentation node')
+      return
+    self.lesionSelector.clear()
+    segmentation = segmentationNode.GetSegmentation()
+    numberOfSegments = segmentation.GetNumberOfSegments()
+    for segment in range(numberOfSegments):
+      segmentName = segmentation.GetNthSegment(segment).GetName()
+      self.lesionSelector.addItem(segmentName, segment)
 
   def onMarkupsNodeSelectionChanged(self):
     self.markupsNode = self.markupSelector.currentNode()
@@ -363,21 +363,21 @@ class RfAblationWidget(ScriptedLoadableModuleWidget):
     self.populateNeedleEntryComboBox()
 
   def updateFiducialModels(self, caller=None, event=None):
-  	#self.needleNodeReferenceRole = 'NeedleRef'
-  	inputVolumeNode = self.inputVolumeSelector.currentNode()
-  	print "fiducial being moved"
-  	numberOfNeedles = len(self.needleFiducialPairList)
-  	if numberOfNeedles > 0:
-  		print numberOfNeedles
-  		for num in range(numberOfNeedles):
-  			needleInfo = self.needleFiducialPairList[num]
-  			needleModelNode = inputVolumeNode.GetNthNodeReference('NeedleRef', (needleInfo[2]-1)) #TODO: remove the hard coded name
-			slicer.mrmlScene.RemoveNode(needleModelNode)
+    #self.needleNodeReferenceRole = 'NeedleRef'
+    inputVolumeNode = self.inputVolumeSelector.currentNode()
+    print("fiducial being moved")
+    numberOfNeedles = len(self.needleFiducialPairList)
+    if numberOfNeedles > 0:
+      print(numberOfNeedles)
+      for num in range(numberOfNeedles):
+        needleInfo = self.needleFiducialPairList[num]
+        needleModelNode = inputVolumeNode.GetNthNodeReference('NeedleRef', (needleInfo[2]-1)) #TODO: remove the hard coded name
+      #slicer.mrmlScene.RemoveNode(needleModelNode)
 
-		for create in range(numberOfNeedles):
-			needleInfo = self.needleFiducialPairList[create]
-			print create, needleInfo
-  			result = self.logic.createNeedleModel(needleInfo[0],needleInfo[1], inputVolumeNode, self.markupSelector.currentNode(), needleInfo[2])
+    for create in range(numberOfNeedles):
+      needleInfo = self.needleFiducialPairList[create]
+      print("create: {}, needleInfo: {}".format(create, needleInfo))
+      result = self.logic.createNeedleModel(needleInfo[0],needleInfo[1], inputVolumeNode, self.markupSelector.currentNode(), needleInfo[2])
 
 
   def populateNeedleEntryComboBox(self):
@@ -536,7 +536,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
     # multiple needles 
     doseMap = {}
     tempIndex = centerPoint
-    print temperatureProfile[centerPoint]
+    print(temperatureProfile[centerPoint])
     for i in range(centerPoint+1):
         realTemp = int(round(temperatureProfile[tempIndex]))
         if realTemp == 37:
@@ -560,7 +560,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
         elif tempChange < 43:
             doseMap[i] = 65
         else :
-        	doseMap[i] = 100
+          doseMap[i] = 100
         tempIndex = tempIndex - 1
 
     return doseMap
@@ -649,7 +649,7 @@ class RfAblationLogic(ScriptedLoadableModuleLogic):
 
     doseMap = self.calculateDoseMap(burnTime)
     logging.info('calculated dose map')
-    print doseMap
+    print(doseMap)
 
     doseVolumeArray = slicer.util.array(doseVolumeNode.GetID())
     doseVolumeArray.fill(0)
